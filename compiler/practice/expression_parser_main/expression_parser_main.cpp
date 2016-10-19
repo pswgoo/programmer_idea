@@ -179,6 +179,7 @@ private:
 
 private:
 	Lexer::Token value_;
+	int expression_value_ = 0;
 	vector<ExpressionTree> children_;
 };
 
