@@ -13,7 +13,15 @@ class Lexer {
 public:
 	static const std::unordered_map<std::string, TokenType> kKeyWords;
 	static const std::unordered_map<std::string, TokenType> kOperators;
-	
+	struct Token;
+
+	Lexer() = default;
+	Lexer(const std::string& sequence) { Tokenize(sequence); }
+	int Tokenize(const std::string &sequence);
+	const Token& Current() const;
+	const Token& Next() const;
+	const Token& ToNext();
+
 	struct Token {
 		Token() = default;
 		Token(TokenType type, const std::string& value) : type_(type), value_(value) {};
@@ -26,12 +34,6 @@ public:
 			return this == &kNonToken_;
 		}
 	};
-
-	int Tokenize(const std::string &sequence);
-	const Token& Current() const;
-	const Token& Next() const;
-	const Token& ToNext();
-
 private:
 	static const Token kNonToken_;
 	int cursor_ = 0;
