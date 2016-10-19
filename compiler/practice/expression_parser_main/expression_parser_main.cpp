@@ -21,7 +21,10 @@ public:
 	ExpressionTree(const Lexer::Token& token) : value_(token) {}
 	bool Parse(const std::string& expression) {
 		Lexer lexer(expression);
-		return ParseE(lexer);
+		bool valid = ParseE(lexer);
+		if (!lexer.Current().Non())
+			valid = false;
+		return valid;
 	}
 	
 	void Print(std::ostream& os) {
@@ -153,11 +156,11 @@ private:
 
 int main(int argc, char** argv) {
 
-	string expression = "-(3 + 34) /(2 -54)*(-3/2) + ((3+-1)/(4-2))";
+	string expression = "-(3 + 34) /(2 -54)*(-3/2) + ((3+-1)/(4-2)) ";
 	cout << expression << endl;
 
 	ExpressionTree tree;
-	cout << "Parse: " << tree.Parse(expression);
+	cout << "Parse: " << tree.Parse(expression) << endl;
 	ofstream fout("test.txt");
 	tree.Print(fout);
 
