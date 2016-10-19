@@ -1,5 +1,6 @@
 #include <iostream>
 #include <fstream>
+#include <memory>
 
 #include "compiler/compiler_basic/lexer.h"
 
@@ -7,248 +8,210 @@ using namespace std;
 using namespace pswgoo;
 
 /**
-Grammer:
+Origin Grammer:
+E -> E+F | E-F | F
+F -> F/G | F*G | G
+G -> (E) | D | -G
 
-E -> (E)E' | DE' | -TE'
-T -> D | (E)
-E' -> +E | -E | *E | /E | epsilon
-D -> number
+Eliminate left recursion:
+E -> FE'
+E' -> +FE' | -FE' | epsilon
+F -> GF'
+F' -> /GF' | *GF' | epsilon
+G -> (E) | D | -G
 **/
 
-/*
-expr ParseE() {
-	switch next() {
-	case '(':
-		consume('(');
-		expr e = ParseE();
-		consume(')');
-		return parseEs(e);
-	case '-':
-
-	}
-}
-
-expr ParseEs(expr l) {
-	switch next() {
-	case '+':
-		consume('+');
-		expr r = ParseE();
-		return AddNode(l, r);
-	default:
-		return l;
-	}
-}
-*/
-
-class ExpressionTree {
+class AstNode {
 public:
-	ExpressionTree() :type_(TokenType::NON_TERMINAL, "E") {};
-	ExpressionTree(const Lexer::Token& token) : type_(token) {}
-	bool Parse(const std::string& expression) {
-		Lexer lexer(expression);
-		bool valid = ParseE(lexer);
-		if (!lexer.Current().Non())
-			valid = false;
-		return valid;
-	}
+	virtual int Value() const = 0;
 	
 	void Print(std::ostream& os) {
 		os << children_.size() << endl;
-		for (const string& str : ToString())
+		for (const string& str : ToStrings())
 			os << str << endl;
 	}
 
-	vector<string> ToString() const {
-		if (type_.type_ != NON_TERMINAL)
-			return{ type_.value_ };
-		vector<string> ret_strings = { type_.value_ + " : {" };
+	vector<string> ToStrings() const {
+		if (children_.empty())
+			return{ value_ };
+		vector<string> ret_strings = { value_ + " : {" };
 		for (int i = 0; i < children_.size(); ++i) {
-			for (const string& str : children_[i].ToString())
+			for (const string& str : children_[i]->ToStrings())
 				ret_strings.emplace_back('\t' + str);
 		}
 		ret_strings.emplace_back("}");
 		return ret_strings;
 	}
 
-	const Lexer::Token& value() const { return type_; }
-	const vector<ExpressionTree>& children() const { return children_; }
+protected:
+	std::string value_;
+	std::vector < std::unique_ptr<AstNode>> children_;
+};
 
-	int Evaluate() const {
-		return Evaluate(type_.value_);
+class NumberNode : public AstNode {
+public:
+	NumberNode(const std::string& value) { value_ = value; }
+	virtual int Value() const {
+		return stoi(value_);
+	}
+};
+
+class AddNode : public AstNode {
+public:
+	AddNode(std::unique_ptr<AstNode>&& lhs, std::unique_ptr<AstNode>&& rhs) {
+		children_.emplace_back(move(lhs));
+		children_.emplace_back(move(rhs));
 	}
 
-private:
-	int Evaluate(const string &type, int prev = 0) const  {
-		if (type_.type_ == INT)
-			return stoi(type_.value_);
-		if (type != type_.value_) {
-			cerr << "TYPE not match " << type_.value_ << " " << type << endl;
+	virtual int Value() const {
+		return children_[0]->Value() + children_[1]->Value();
+	}
+};
+
+class MinusNode : public AstNode {
+public:
+	MinusNode(std::unique_ptr<AstNode>&& lhs, std::unique_ptr<AstNode>&& rhs) {
+		children_.emplace_back(move(lhs));
+		children_.emplace_back(move(rhs));
+	}
+
+	virtual int Value() const {
+		return children_[0]->Value() - children_[1]->Value();
+	}
+};
+
+class ProductNode : public AstNode {
+public:
+	ProductNode(std::unique_ptr<AstNode>&& lhs, std::unique_ptr<AstNode>&& rhs) {
+		children_.emplace_back(move(lhs));
+		children_.emplace_back(move(rhs));
+	}
+
+	virtual int Value() const {
+		return children_[0]->Value() * children_[1]->Value();
+	}
+};
+
+class DivideNode : public AstNode {
+public:
+	DivideNode(std::unique_ptr<AstNode>&& lhs, std::unique_ptr<AstNode>&& rhs) {
+		children_.emplace_back(move(lhs));
+		children_.emplace_back(move(rhs));
+	}
+
+	virtual int Value() const {
+		return children_[0]->Value() / children_[1]->Value();
+	}
+};
+
+class NegateNode : public AstNode {
+public:
+	NegateNode(unique_ptr<AstNode>&& lhs) {
+		value_ = '-';
+		children_.emplace_back(move(lhs));
+	}
+	virtual int Value() const {
+		return -children_[0]->Value();
+	}
+};
+
+class IntExpression :public AstNode {
+public:
+	IntExpression() = default;
+	IntExpression(const std::string& expression) { lexer_.Tokenize(expression); };
+	bool Parse(const std::string& expression) {
+		bool success = true;
+		try {
+			lexer_.Tokenize(expression);
+			children_.resize(1);
+			children_.front() = ParseE();
+			if (!lexer_.Current().Non()) {
+				success = false;
+				throw("Expression invalid, has additional token!");
+			}
+		}
+		catch (const exception &e) {
+			clog << "Exception: " << e.what() << endl;
+			success = false;
+		}
+		return success;
+	}
+
+	virtual int Value() const {
+		if (children_.empty())
 			return 0;
-		}
-			
-		if (type_.value_ == "E") {
-			if (children_.size() == 0)
-				return prev;
-			if (children_[0].type_.type_ == OP_LEFT_PARENTHESIS)
-				return children_[3].Evaluate("E'", children_[1].Evaluate("E"));
-			else if (children_[0].type_.type_ == INT)
-				return children_[1].Evaluate("E'", children_[0].Evaluate("INT"));
-			else if (children_[0].type_.type_ == OP_MINUS) 
-				return children_[2].Evaluate("E'", -children_[1].Evaluate("T"));
-			else
-				cerr << "Evaluate error in " << type_.value_;
-		}
-		else if (type_.value_ == "E'") {
-			if (children_.size() == 0)
-				return prev;
-			switch (children_[0].type_.type_)
-			{
-			case OP_ADD:
-				prev += children_[1].Evaluate("E");
-				break;
-			case OP_MINUS:
-				prev -= children_[1].Evaluate("E");
-				break;
-			case OP_PRODUCT:
-				prev *= children_[1].Evaluate("E");
-				break;
-			case OP_DIVIDE:
-				if (children_[1].Evaluate("E") == 0)
-					prev = numeric_limits<int>::max();
-				else
-					prev /= children_[1].Evaluate("E");
-				break;
-			default:
-				break;
-			}
-			return prev;
-		}
-		else if (type_.value_ == "T") {
-			if (children_[0].type_.type_ == INT)
-				return children_[0].Evaluate("INT");
-			else if (children_[0].type_.type_ == OP_LEFT_PARENTHESIS)
-				return children_[1].Evaluate("E");
-			else
-				cerr << "Evaluate error in " << type_.value_;
-		}
-		return 0;
-	}
-
-	bool ParseE(Lexer& lexer) {
-		#define set_error(message) {valid = false; cerr << (message) << endl; break;}
-		bool valid = true;
-
-		switch (lexer.Current().type_) {
-			case TokenType::OP_LEFT_PARENTHESIS: {
-				children_.emplace_back(lexer.Current());
-				lexer.ToNext();
-				ExpressionTree expression(Lexer::Token(TokenType::NON_TERMINAL, "E"));
-				if (expression.ParseE(lexer))
-					children_.emplace_back(move(expression));
-				else
-					set_error("ERROR: ParseE error, expression invalid after '('");
-				if (lexer.Current().type_ == TokenType::OP_RIGHT_PARENTHESIS)
-					children_.emplace_back(ExpressionTree(lexer.Current()));
-				else
-					set_error("ERROR: ParseE error, '(' has no matched ')', " + lexer.Current().type_);
-				lexer.ToNext();
-				ExpressionTree s(Lexer::Token(TokenType::NON_TERMINAL, "E'"));
-				if (s.ParseEs(lexer)) {
-					children_.emplace_back(move(s));
-				}
-				else
-					set_error("ERROR: ParseE error, in parse E'");
-				
-				break;
-			}
-			case TokenType::INT: {
-				children_.emplace_back(lexer.Current());
-				lexer.ToNext();
-				ExpressionTree expression(Lexer::Token(TokenType::NON_TERMINAL, "E'"));
-				if (expression.ParseEs(lexer))
-					children_.emplace_back(move(expression));
-				else
-					set_error("ERROR: ParseE error, in ParseEs");
-				break;
-			}
-			case TokenType::OP_MINUS: {
-				children_.emplace_back(lexer.Current());
-				lexer.ToNext();
-				ExpressionTree expression(Lexer::Token(TokenType::NON_TERMINAL, "T"));
-				if (expression.ParseT(lexer))
-					children_.emplace_back(move(expression));
-				else
-					set_error("ERROR: ParseE error, in ParseT");
-				ExpressionTree es(Lexer::Token(TokenType::NON_TERMINAL, "E'"));
-				if (es.ParseEs(lexer))
-					children_.emplace_back(move(es));
-				else
-					set_error("ERROR: ParseE error, in ParseEs");
-				break;
-			}
-			default:
-				clog << "ERROR: ParseE error, invalid char" << endl;
-				valid = false;
-				break;
-		}
-		#undef set_error
-		return valid;
-	}
-
-	bool ParseT(Lexer& lexer) {
-		bool valid = true;
-		if (lexer.Current().type_ == INT) {
-			children_.emplace_back(lexer.Current());
-			lexer.ToNext();
-		}
-		else if (lexer.Current().type_ == OP_LEFT_PARENTHESIS) {
-			children_.emplace_back(lexer.Current());
-			lexer.ToNext();
-			ExpressionTree expression(Lexer::Token(TokenType::NON_TERMINAL, "E"));
-			valid = expression.ParseE(lexer);
-			if (valid)
-				children_.emplace_back(move(expression));
-			else
-				cerr << "ERROR: ParseT error, in parse E" << endl;
-			if (lexer.Current().type_ == OP_RIGHT_PARENTHESIS) {
-				children_.emplace_back(lexer.Current());
-			}
-			else {
-				valid = false;
-				cerr << "ERROR: ParseT error, '(' has no matched ')'" << endl;
-			}
-			lexer.ToNext();
-		}
-		return valid;
-	}
-
-	bool ParseEs(Lexer& lexer) {
-		bool valid = true;
-		if (lexer.Current().type_ == OP_ADD || lexer.Current().type_ == OP_MINUS || lexer.Current().type_ == OP_PRODUCT || lexer.Current().type_ == OP_DIVIDE) {
-			children_.emplace_back(lexer.Current());
-			lexer.ToNext();
-			ExpressionTree expression(Lexer::Token(TokenType::NON_TERMINAL, "E"));
-			valid = expression.ParseE(lexer);
-			if (valid)
-				children_.emplace_back(move(expression));
-			else
-				cerr << "ERROR: ParseEs error, in parse E" << endl;
-		}
-		return valid;
+		return children_.front()->Value();
 	}
 
 private:
-	Lexer::Token type_;
-	vector<ExpressionTree> children_;
+	std::unique_ptr<AstNode> ParseE() {
+		unique_ptr<AstNode> left = ParseF();
+		return ParseEs(move(left));
+	}
+	std::unique_ptr<AstNode> ParseEs(unique_ptr<AstNode>&& lhs) {
+		if (lexer_.Current().type_ == TokenType::OP_ADD) {
+			lexer_.ToNext();
+			return unique_ptr<AddNode>(new AddNode(move(lhs), ParseF()));
+		}
+		else if (lexer_.Current().type_ == TokenType::OP_MINUS) {
+			lexer_.ToNext();
+			return unique_ptr<MinusNode>(new MinusNode(move(lhs), ParseF()));
+		}
+		return move(lhs);
+	}
+	std::unique_ptr<AstNode> ParseF() {
+		unique_ptr<AstNode> left = ParseG();
+		return ParseFs(move(left));
+	}
+	std::unique_ptr<AstNode> ParseFs(unique_ptr<AstNode>&& lhs) {
+		if (lexer_.Current().type_ == TokenType::OP_PRODUCT) {
+			lexer_.ToNext();
+			return unique_ptr<ProductNode>(new ProductNode(move(lhs), ParseF()));
+		}
+		else if (lexer_.Current().type_ == TokenType::OP_DIVIDE) {
+			lexer_.ToNext();
+			return unique_ptr<DivideNode>(new DivideNode(move(lhs), ParseF()));
+		}
+		return move(lhs);
+	}
+	std::unique_ptr<AstNode> ParseG() {
+		switch (lexer_.Current().type_)
+		{
+		case TokenType::INT:
+			return unique_ptr<NumberNode>(new NumberNode(lexer_.ToNext().value_));
+		case TokenType::OP_LEFT_PARENTHESIS:{
+			lexer_.ToNext();
+			unique_ptr<AstNode> left = ParseE();
+			if (!lexer_.Consume(TokenType::OP_RIGHT_PARENTHESIS))
+				throw("Has no matched ')' for '(' in ParseG");
+			return left;
+		}
+		case TokenType::OP_MINUS:
+			lexer_.ToNext();
+			return unique_ptr<NegateNode>(new NegateNode(ParseG()));
+
+		default:
+			break;
+		}
+		throw("ParseG error, not matched rule");
+		return nullptr;
+	}
+
+private:
+	Lexer lexer_;
 };
 
 int main(int argc, char** argv) {
 
-	string expression = "-(2 + 34) /-(2 -54)*(-3/2) + ((3+-1)/(4-2)) ";
-	cout << expression << endl;
+	string eA = "-(2 + 34) /-(2 -54)*(-3/2) + ((3+-1)/(4-2)) ";
+	string eB = "-(2 - 54)*(-3 / 2) + ((3 + -1) / (4 - 2))";
+	cout << eA << endl;
 
-	ExpressionTree tree;
-	cout << "Parse: " << tree.Parse(expression) << endl;
+	IntExpression tree;
+	cout << "Parse: " << tree.Parse(eA) << endl;
+
+	ofstream fout("test.txt");
+	tree.Print(fout);
 
 	int b = - - -1;
 	cout << b << endl;
@@ -257,11 +220,9 @@ int main(int argc, char** argv) {
 	cout << "A = " << A << endl;
 	cout << "B = " << -(2 - 54)*(-3 / 2) + ((3 + -1) / (4 - 2)) << endl;
 
-	cout << "Evaluate: " << tree.Evaluate() << endl;
-
-	ofstream fout("test.txt");
-	tree.Print(fout);
-
+	cout << "Evaluate A: " << tree.Value() << endl;
+	tree.Parse(eB);
+	cout << "Evaluate B: " << tree.Value() << endl;
 	system("pause");
 	return 0;
 }

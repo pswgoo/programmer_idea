@@ -121,7 +121,7 @@ const Lexer::Token & Lexer::Current() const {
 		return tokens_[cursor_];
 }
 
-const Lexer::Token& Lexer::Next() const {
+const Lexer::Token& Lexer::LookNext() const {
 	if (cursor_ + 1 >= tokens_.size())
 		return kNonToken_;
 	else
@@ -132,7 +132,7 @@ const Lexer::Token& Lexer::ToNext() {
 	if (cursor_ >= tokens_.size())
 		return kNonToken_;
 	else 
-		return tokens_[++cursor_];
+		return tokens_[cursor_++];
 }
 
 

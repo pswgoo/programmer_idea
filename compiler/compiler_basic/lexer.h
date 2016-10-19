@@ -19,8 +19,15 @@ public:
 	Lexer(const std::string& sequence) { Tokenize(sequence); }
 	int Tokenize(const std::string &sequence);
 	const Token& Current() const;
-	const Token& Next() const;
+	const Token& LookNext() const;
 	const Token& ToNext();
+	bool Consume(TokenType token) {
+		if (Current().type_ != token)
+			return false;
+			//throw ("Token Consume not match: " + kTokenTypeStr[token] + "!=" + Current().value_);
+		++cursor_;
+		return true;
+	}
 
 	struct Token {
 		Token() = default;
