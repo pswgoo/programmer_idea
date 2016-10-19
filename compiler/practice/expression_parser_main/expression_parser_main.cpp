@@ -42,8 +42,8 @@ expr ParseEs(expr l) {
 
 class ExpressionTree {
 public:
-	ExpressionTree() :value_(TokenType::NON_TERMINAL, "E") {};
-	ExpressionTree(const Lexer::Token& token) : value_(token) {}
+	ExpressionTree() :type_(TokenType::NON_TERMINAL, "E") {};
+	ExpressionTree(const Lexer::Token& token) : type_(token) {}
 	bool Parse(const std::string& expression) {
 		Lexer lexer(expression);
 		bool valid = ParseE(lexer);
@@ -59,9 +59,9 @@ public:
 	}
 
 	vector<string> ToString() const {
-		if (value_.type_ != NON_TERMINAL)
-			return{ value_.value_ };
-		vector<string> ret_strings = { value_.value_ + " : {" };
+		if (type_.type_ != NON_TERMINAL)
+			return{ type_.value_ };
+		vector<string> ret_strings = { type_.value_ + " : {" };
 		for (int i = 0; i < children_.size(); ++i) {
 			for (const string& str : children_[i].ToString())
 				ret_strings.emplace_back('\t' + str);
@@ -70,10 +70,70 @@ public:
 		return ret_strings;
 	}
 
-	const Lexer::Token& value() const { return value_; }
+	const Lexer::Token& value() const { return type_; }
 	const vector<ExpressionTree>& children() const { return children_; }
 
+	int Evaluate() const {
+		return Evaluate(type_.value_);
+	}
+
 private:
+	int Evaluate(const string &type, int prev = 0) const  {
+		if (type_.type_ == INT)
+			return stoi(type_.value_);
+		if (type != type_.value_) {
+			cerr << "TYPE not match " << type_.value_ << " " << type << endl;
+			return 0;
+		}
+			
+		if (type_.value_ == "E") {
+			if (children_.size() == 0)
+				return prev;
+			if (children_[0].type_.type_ == OP_LEFT_PARENTHESIS)
+				return children_[3].Evaluate("E'", children_[1].Evaluate("E"));
+			else if (children_[0].type_.type_ == INT)
+				return children_[1].Evaluate("E'", children_[0].Evaluate("INT"));
+			else if (children_[0].type_.type_ == OP_MINUS) 
+				return children_[2].Evaluate("E'", -children_[1].Evaluate("T"));
+			else
+				cerr << "Evaluate error in " << type_.value_;
+		}
+		else if (type_.value_ == "E'") {
+			if (children_.size() == 0)
+				return prev;
+			switch (children_[0].type_.type_)
+			{
+			case OP_ADD:
+				prev += children_[1].Evaluate("E");
+				break;
+			case OP_MINUS:
+				prev -= children_[1].Evaluate("E");
+				break;
+			case OP_PRODUCT:
+				prev *= children_[1].Evaluate("E");
+				break;
+			case OP_DIVIDE:
+				if (children_[1].Evaluate("E") == 0)
+					prev = numeric_limits<int>::max();
+				else
+					prev /= children_[1].Evaluate("E");
+				break;
+			default:
+				break;
+			}
+			return prev;
+		}
+		else if (type_.value_ == "T") {
+			if (children_[0].type_.type_ == INT)
+				return children_[0].Evaluate("INT");
+			else if (children_[0].type_.type_ == OP_LEFT_PARENTHESIS)
+				return children_[1].Evaluate("E");
+			else
+				cerr << "Evaluate error in " << type_.value_;
+		}
+		return 0;
+	}
+
 	bool ParseE(Lexer& lexer) {
 		#define set_error(message) {valid = false; cerr << (message) << endl; break;}
 		bool valid = true;
@@ -87,11 +147,10 @@ private:
 					children_.emplace_back(move(expression));
 				else
 					set_error("ERROR: ParseE error, expression invalid after '('");
-
 				if (lexer.Current().type_ == TokenType::OP_RIGHT_PARENTHESIS)
 					children_.emplace_back(ExpressionTree(lexer.Current()));
 				else
-					set_error("ERROR: ParseE error, '(' has no matched ')', " + lexer.Current().value_);
+					set_error("ERROR: ParseE error, '(' has no matched ')', " + lexer.Current().type_);
 				lexer.ToNext();
 				ExpressionTree s(Lexer::Token(TokenType::NON_TERMINAL, "E'"));
 				if (s.ParseEs(lexer)) {
@@ -99,6 +158,7 @@ private:
 				}
 				else
 					set_error("ERROR: ParseE error, in parse E'");
+				
 				break;
 			}
 			case TokenType::INT: {
@@ -178,18 +238,27 @@ private:
 	}
 
 private:
-	Lexer::Token value_;
-	int expression_value_ = 0;
+	Lexer::Token type_;
 	vector<ExpressionTree> children_;
 };
 
 int main(int argc, char** argv) {
 
-	string expression = "-(3 + 34) /-(2 -54)*(-3/2) + ((3+-1)/(4-2)) ";
+	string expression = "-(2 + 34) /-(2 -54)*(-3/2) + ((3+-1)/(4-2)) ";
 	cout << expression << endl;
 
 	ExpressionTree tree;
 	cout << "Parse: " << tree.Parse(expression) << endl;
+
+	int b = - - -1;
+	cout << b << endl;
+
+	int A = -(2 + 34) / -(2 - 54)*(-3 / 2) + ((3 + -1) / (4 - 2));
+	cout << "A = " << A << endl;
+	cout << "B = " << -(2 - 54)*(-3 / 2) + ((3 + -1) / (4 - 2)) << endl;
+
+	cout << "Evaluate: " << tree.Evaluate() << endl;
+
 	ofstream fout("test.txt");
 	tree.Print(fout);
 
