@@ -15,6 +15,31 @@ E' -> +E | -E | *E | /E | epsilon
 D -> number
 **/
 
+/*
+expr ParseE() {
+	switch next() {
+	case '(':
+		consume('(');
+		expr e = ParseE();
+		consume(')');
+		return parseEs(e);
+	case '-':
+
+	}
+}
+
+expr ParseEs(expr l) {
+	switch next() {
+	case '+':
+		consume('+');
+		expr r = ParseE();
+		return AddNode(l, r);
+	default:
+		return l;
+	}
+}
+*/
+
 class ExpressionTree {
 public:
 	ExpressionTree() :value_(TokenType::NON_TERMINAL, "E") {};
@@ -44,6 +69,9 @@ public:
 		ret_strings.emplace_back("}");
 		return ret_strings;
 	}
+
+	const Lexer::Token& value() const { return value_; }
+	const vector<ExpressionTree>& children() const { return children_; }
 
 private:
 	bool ParseE(Lexer& lexer) {
@@ -156,7 +184,7 @@ private:
 
 int main(int argc, char** argv) {
 
-	string expression = "-(3 + 34) /(2 -54)*(-3/2) + ((3+-1)/(4-2)) ";
+	string expression = "-(3 + 34) /-(2 -54)*(-3/2) + ((3+-1)/(4-2)) ";
 	cout << expression << endl;
 
 	ExpressionTree tree;
