@@ -26,7 +26,6 @@ public:
 	virtual int Value() const = 0;
 	
 	void Print(std::ostream& os) {
-		os << children_.size() << endl;
 		for (const string& str : ToStrings())
 			os << str << endl;
 	}
@@ -34,7 +33,7 @@ public:
 	vector<string> ToStrings() const {
 		if (children_.empty())
 			return{ value_ };
-		vector<string> ret_strings = { value_ + " : {" };
+		vector<string> ret_strings = { value_ + "{" };
 		for (int i = 0; i < children_.size(); ++i) {
 			for (const string& str : children_[i]->ToStrings())
 				ret_strings.emplace_back('\t' + str);
@@ -61,6 +60,7 @@ public:
 	AddNode(std::unique_ptr<AstNode>&& lhs, std::unique_ptr<AstNode>&& rhs) {
 		children_.emplace_back(move(lhs));
 		children_.emplace_back(move(rhs));
+		value_ = '+';
 	}
 
 	virtual int Value() const {
@@ -73,6 +73,7 @@ public:
 	MinusNode(std::unique_ptr<AstNode>&& lhs, std::unique_ptr<AstNode>&& rhs) {
 		children_.emplace_back(move(lhs));
 		children_.emplace_back(move(rhs));
+		value_ = '-';
 	}
 
 	virtual int Value() const {
@@ -85,6 +86,7 @@ public:
 	ProductNode(std::unique_ptr<AstNode>&& lhs, std::unique_ptr<AstNode>&& rhs) {
 		children_.emplace_back(move(lhs));
 		children_.emplace_back(move(rhs));
+		value_ = '*';
 	}
 
 	virtual int Value() const {
@@ -97,6 +99,7 @@ public:
 	DivideNode(std::unique_ptr<AstNode>&& lhs, std::unique_ptr<AstNode>&& rhs) {
 		children_.emplace_back(move(lhs));
 		children_.emplace_back(move(rhs));
+		value_ = '/';
 	}
 
 	virtual int Value() const {
@@ -107,8 +110,8 @@ public:
 class NegateNode : public AstNode {
 public:
 	NegateNode(unique_ptr<AstNode>&& lhs) {
-		value_ = '-';
 		children_.emplace_back(move(lhs));
+		value_ = '-';
 	}
 	virtual int Value() const {
 		return -children_[0]->Value();
@@ -151,11 +154,13 @@ private:
 	std::unique_ptr<AstNode> ParseEs(unique_ptr<AstNode>&& lhs) {
 		if (lexer_.Current().type_ == TokenType::OP_ADD) {
 			lexer_.ToNext();
-			return unique_ptr<AddNode>(new AddNode(move(lhs), ParseF()));
+			unique_ptr<AddNode> left(new AddNode(move(lhs), ParseF()));
+			return ParseEs(move(left));
 		}
 		else if (lexer_.Current().type_ == TokenType::OP_MINUS) {
 			lexer_.ToNext();
-			return unique_ptr<MinusNode>(new MinusNode(move(lhs), ParseF()));
+			unique_ptr<MinusNode> left(new MinusNode(move(lhs), ParseF()));
+			return ParseEs(move(left));
 		}
 		return move(lhs);
 	}
@@ -166,11 +171,13 @@ private:
 	std::unique_ptr<AstNode> ParseFs(unique_ptr<AstNode>&& lhs) {
 		if (lexer_.Current().type_ == TokenType::OP_PRODUCT) {
 			lexer_.ToNext();
-			return unique_ptr<ProductNode>(new ProductNode(move(lhs), ParseF()));
+			unique_ptr<ProductNode> left(new ProductNode(move(lhs), ParseG()));
+			return ParseFs(move(left));
 		}
 		else if (lexer_.Current().type_ == TokenType::OP_DIVIDE) {
 			lexer_.ToNext();
-			return unique_ptr<DivideNode>(new DivideNode(move(lhs), ParseF()));
+			unique_ptr<DivideNode> left(new DivideNode(move(lhs), ParseG()));
+			return ParseFs(move(left));
 		}
 		return move(lhs);
 	}
@@ -193,7 +200,7 @@ private:
 		default:
 			break;
 		}
-		throw("ParseG error, not matched rule");
+		throw("ParseG error, not matched rule for :" + lexer_.Current().value_);
 		return nullptr;
 	}
 
@@ -205,12 +212,13 @@ int main(int argc, char** argv) {
 
 	string eA = "-(2 + 34) /-(2 -54)*(-3/2) + ((3+-1)/(4-2)) ";
 	string eB = "-(2 - 54)*(-3 / 2) + ((3 + -1) / (4 - 2))";
+	string eC = "6 / 3 * (2 + 3)";
 	cout << eA << endl;
 
 	IntExpression tree;
 	cout << "Parse: " << tree.Parse(eA) << endl;
 
-	ofstream fout("test.txt");
+	ofstream fout("testA.txt");
 	tree.Print(fout);
 
 	int b = - - -1;
@@ -219,10 +227,14 @@ int main(int argc, char** argv) {
 	int A = -(2 + 34) / -(2 - 54)*(-3 / 2) + ((3 + -1) / (4 - 2));
 	cout << "A = " << A << endl;
 	cout << "B = " << -(2 - 54)*(-3 / 2) + ((3 + -1) / (4 - 2)) << endl;
+	cout << "C = " << 6 / 3 * (2 + 3) << endl;
 
 	cout << "Evaluate A: " << tree.Value() << endl;
 	tree.Parse(eB);
 	cout << "Evaluate B: " << tree.Value() << endl;
+	tree.Parse(eC);
+	cout << "Evaluate C: " << tree.Value() << endl;
+
 	system("pause");
 	return 0;
 }
