@@ -7,6 +7,7 @@ using namespace std;
 
 namespace pswgoo {
 const Lexer::Token Lexer::kNonToken_ = Lexer::Token();
+
 const unordered_map<string, TokenType> Lexer::kOperators = { 
 	{ "+", OP_ADD }, { "-", OP_MINUS }, { "*", OP_PRODUCT }, 
 	{ "/", OP_DIVIDE }, { "(", OP_LEFT_PARENTHESIS }, { ")", OP_RIGHT_PARENTHESIS},
