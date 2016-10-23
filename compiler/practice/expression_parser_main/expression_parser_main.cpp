@@ -184,7 +184,7 @@ private:
 	std::unique_ptr<AstNode> ParseG() {
 		switch (lexer_.Current().type_)
 		{
-		case TokenType::INT:
+		case TokenType::INTEGER:
 			return unique_ptr<NumberNode>(new NumberNode(lexer_.ToNext().value_));
 		case TokenType::OP_LEFT_PARENTHESIS:{
 			lexer_.ToNext();

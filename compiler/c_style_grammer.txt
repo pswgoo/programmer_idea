@@ -1,7 +1,7 @@
 Type -> bool | char | int | float | double
 
 ConstDef -> const Type id = ConstValue
-ConstValue -> boolean | ch | integer | real | str
+ConstValue -> boolean | ch | integer | real | str | null
 ConstInt -> integer | id
 
 Decl -> Type id Decl1 | Type& id Decl1 | Type id[] Decl1
@@ -21,18 +21,25 @@ Func -> id(Args)
 Args -> Expr ArgList | epsilon
 ArgList -> ,Expr ArgList | epsilon
 
-Stmt -> Expr; | Decl; | ConstDef;
+Stmt -> Expr; | Decl; | ConstDef; | return Expr; | return;
 	 -> {Stmts}
-	 -> for (Def; Expr ; Expr) Stmt
+	 -> for (Def; Expr ; Expr) LoopStmt
+	 -> for (Expr; Expr ; Expr) LoopStmt
 	 -> if (Expr) Stmt
 	 -> if (Expr) Stmt else Stmt
-	 -> while (Expr) Stmt
+	 -> while (Expr) LoopStmt
 	 -> switch (Expr) { Case }
 
-Case -> case ConstInt : Stmt Case1 | case ConstInt : Stmt Case1 default: Stmt
-Case1 -> case ConstInt : Stmt Case1 | epsilon
-
 Stmts -> Stmt Stmts | epsilon
+
+StmtWithBreak -> break; | Stmt | {StmtWithBreaks}
+StmtWithBreaks -> StmtWithBreak StmtWithBreaks | epsilon
+
+LoopStmt -> continue; | StmtWithBreak | {LoopStmts}
+LoopStmts -> LoopStmt LoopStmts | epsilon
+
+Case -> case ConstInt : StmtWithBreak Case1 | case ConstInt : StmtWithBreak Case1 default: StmtWithBreak
+Case1 -> case ConstInt : StmtWithBreak Case1 | epsilon
 
 Expr -> Expr1 ExprR
 ExprR -> = Expr ExprR | += Expr ExprR | -= Expr ExprR | *= Expr ExprR | /= Expr ExprR | %= Expr ExprR | epsilon
