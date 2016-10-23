@@ -1,0 +1,38 @@
+Type -> bool | char | int | float | double | void
+
+Decl -> Type id Decl1
+Decl1 -> [number] Decl1 | epsilon
+
+Array -> id [number] Decl1
+
+FuncDef -> Type id(Param) { Stmts }
+Param -> Decl Param1
+Param1 -> ,Decl Param1 | epsilon
+
+Func -> id(Args)
+Args -> Expr ArgList | epsilon
+ArgList -> ,Expr ArgList
+
+Stmt -> Expr; | Decl;
+	 -> {Stmts}
+	 -> for (Decl; Expr ; Expr) Stmt
+	 -> if (Expr) Stmt
+	 -> if (Expr) Stmt else Stmt
+	 -> while (Expr) Stmt
+	 -> switch (Expr) { Case }
+
+Case -> case id : Stmt Case1 | case id : Stmt Case1 default: Stmt
+Case1 -> case id : Stmt Case1 | epsilon
+
+Stmts -> Stmt Stmts | epsilon
+
+Expr -> Func | id | Array
+	 -> ++Expr | --Expr
+	 -> Expr++ | Expr++
+	 -> !Expr
+	 -> Expr / Expr | Expr * Expr | Expr % Expr
+	 -> Expr + Expr | Expr - Expr
+	 -> Expr < Expr | Expr > Expr | Expr <= Expr | Expr >= Expr
+	 -> Expr == Expr
+	 -> Expr && Expr | Expr || Expr
+	 -> Expr = Expr | Expr += Expr | Expr -= Expr | Expr *= Expr | Expr /= Expr | Expr %= Expr
