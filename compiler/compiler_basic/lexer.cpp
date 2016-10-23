@@ -41,7 +41,7 @@ int Lexer::Tokenize(const string &sequence) {
 			case kNumber:
 				if (isspace(cur_char)) {
 					state = kStart;
-					tokens_.emplace_back(TokenType::INT, tmp_token);
+					tokens_.emplace_back(TokenType::INTEGER, tmp_token);
 					tmp_token.clear();
 				}
 				else if (isdigit(cur_char))
@@ -50,7 +50,7 @@ int Lexer::Tokenize(const string &sequence) {
 					cerr << "ERROR: alpha bet cannot next to digits" << endl;
 				else {
 					state = kOperator;
-					tokens_.emplace_back(TokenType::INT, tmp_token);
+					tokens_.emplace_back(TokenType::INTEGER, tmp_token);
 					tmp_token = string(1, cur_char);
 				}
 				break;

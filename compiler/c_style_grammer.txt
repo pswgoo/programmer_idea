@@ -4,10 +4,10 @@ ConstDef -> const Type id = ConstValue
 ConstValue -> boolean | ch | integer | real | str
 ConstInt -> integer | id
 
-Decl -> Type id Decl1 | Type& id Decl1
+Decl -> Type id Decl1 | Type& id Decl1 | Type id[] Decl1
 Decl1 -> [ConstInt] Decl1 | epsilon
 
-Def -> Decl = Expr | Type id[] = InitList
+Def -> Decl = Expr | Decl = InitList
 InitList -> {Args} | str
 
 Array -> id Array1
