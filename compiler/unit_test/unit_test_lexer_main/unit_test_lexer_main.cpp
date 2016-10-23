@@ -12,6 +12,8 @@ int main(int argc, char** argv) {
 3 + 34 /(2 -54)*(-3/2) + ((3+1)/(4-2)
 	)DELIM";
 
+	int a = 0,b = 1;
+	double d = (double)-1;
 	Lexer lexer; 
 	int ret = lexer.Tokenize(test_str);
 

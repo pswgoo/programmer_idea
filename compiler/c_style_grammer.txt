@@ -1,11 +1,16 @@
-Type -> bool | char | int | float | double | void
+Type -> bool | char | int | float | double
 
-Decl -> Type id Decl1
-Decl1 -> [number] Decl1 | epsilon
+Const -> const Def | number
 
-Array -> id [number] Decl1
+Decl -> Type id Decl1 | Type& id Decl1
+Decl1 -> [Const] Decl1 | epsilon
 
-FuncDef -> Type id(Param) { Stmts }
+Def -> Decl = Expr
+
+Array -> id Array1
+Array1 -> [Const]Array1 | epsilon
+
+FuncDef -> Type id(Param) { Stmts } |  void id(Param) { Stmts }
 Param -> Decl Param1
 Param1 -> ,Decl Param1 | epsilon
 
@@ -13,26 +18,50 @@ Func -> id(Args)
 Args -> Expr ArgList | epsilon
 ArgList -> ,Expr ArgList
 
-Stmt -> Expr; | Decl;
+Stmt -> Expr; | Decl; | Const;
 	 -> {Stmts}
-	 -> for (Decl; Expr ; Expr) Stmt
+	 -> for (Def; Expr ; Expr) Stmt
 	 -> if (Expr) Stmt
 	 -> if (Expr) Stmt else Stmt
 	 -> while (Expr) Stmt
 	 -> switch (Expr) { Case }
 
-Case -> case id : Stmt Case1 | case id : Stmt Case1 default: Stmt
-Case1 -> case id : Stmt Case1 | epsilon
+Case -> case Const : Stmt Case1 | case Const : Stmt Case1 default: Stmt
+Case1 -> case Const : Stmt Case1 | epsilon
 
 Stmts -> Stmt Stmts | epsilon
 
-Expr -> Func | id | Array
-	 -> ++Expr | --Expr
-	 -> Expr++ | Expr++
-	 -> !Expr
-	 -> Expr / Expr | Expr * Expr | Expr % Expr
-	 -> Expr + Expr | Expr - Expr
-	 -> Expr < Expr | Expr > Expr | Expr <= Expr | Expr >= Expr
-	 -> Expr == Expr
-	 -> Expr && Expr | Expr || Expr
-	 -> Expr = Expr | Expr += Expr | Expr -= Expr | Expr *= Expr | Expr /= Expr | Expr %= Expr
+Expr -> Expr1 ExprR
+ExprR -> = Expr ExprR | += Expr ExprR | -= Expr ExprR | *= Expr ExprR | /= Expr ExprR | %= Expr ExprR | epsilon
+
+Expr1 -> Expr2 Expr1R
+Expr1R -> || Expr1 Expr1R | epsilon
+
+Expr2 -> Expr3 Expr2R
+Expr2R -> && Expr2 Expr2R | epsilon
+
+Expr3 -> Expr4 Expr3R
+Expr3R -> '|' Expr3 Expr3R  | epsilon
+
+Expr4 -> Expr5 Expr4R
+Expr4R -> ^ Expr4 Expr4R | epsilon
+
+Expr5 -> Expr6 Expr5R
+Expr5R -> & Expr5 Expr5R | epsilon
+
+Expr6 -> Expr7 Expr6R
+Expr6R -> == Expr6 Expr6R | != Expr6 Expr6R | epsilon
+
+Expr7 -> Expr8 Expr7R
+Expr7R -> < Expr7 Expr7R | > Expr7 Expr7R | <= Expr7 Expr7R | >= Expr7 Expr7R  | epsilon
+
+Expr8 -> Expr9 Expr8R
+Expr8R -> + Expr8 Expr8R | - Expr8 Expr8R | epsilon
+
+Expr9 -> Expr10 Expr9R
+Expr9R -> * Expr9 Expr9R | / Expr9 Expr9R | % Expr9 Expr9R | epsilon
+
+Expr10 -> ++Expr11 | --Expr11 | !Expr11 | +Expr11 | -Expr11 | ~Expr11
+
+Expr11 -> Func Expr11R | id Expr11R | Array Expr11R | (Type)Expr Expr11R | (Expr) Expr11R | Const
+Expr11R -> ++ | -- | epsilon
