@@ -1,14 +1,17 @@
 Type -> bool | char | int | float | double
 
-Const -> const Def | number
+ConstDef -> const Type id = ConstValue
+ConstValue -> boolean | ch | integer | real | str
+ConstInt -> integer | id
 
 Decl -> Type id Decl1 | Type& id Decl1
-Decl1 -> [Const] Decl1 | epsilon
+Decl1 -> [ConstInt] Decl1 | epsilon
 
-Def -> Decl = Expr
+Def -> Decl = Expr | Type id[] = InitList
+InitList -> {Args} | str
 
 Array -> id Array1
-Array1 -> [Const]Array1 | epsilon
+Array1 -> [ConstInt]Array1 | epsilon
 
 FuncDef -> Type id(Param) { Stmts } |  void id(Param) { Stmts }
 Param -> Decl Param1
@@ -16,9 +19,9 @@ Param1 -> ,Decl Param1 | epsilon
 
 Func -> id(Args)
 Args -> Expr ArgList | epsilon
-ArgList -> ,Expr ArgList
+ArgList -> ,Expr ArgList | epsilon
 
-Stmt -> Expr; | Decl; | Const;
+Stmt -> Expr; | Decl; | ConstDef;
 	 -> {Stmts}
 	 -> for (Def; Expr ; Expr) Stmt
 	 -> if (Expr) Stmt
@@ -26,8 +29,8 @@ Stmt -> Expr; | Decl; | Const;
 	 -> while (Expr) Stmt
 	 -> switch (Expr) { Case }
 
-Case -> case Const : Stmt Case1 | case Const : Stmt Case1 default: Stmt
-Case1 -> case Const : Stmt Case1 | epsilon
+Case -> case ConstInt : Stmt Case1 | case ConstInt : Stmt Case1 default: Stmt
+Case1 -> case ConstInt : Stmt Case1 | epsilon
 
 Stmts -> Stmt Stmts | epsilon
 
@@ -63,5 +66,5 @@ Expr9R -> * Expr9 Expr9R | / Expr9 Expr9R | % Expr9 Expr9R | epsilon
 
 Expr10 -> ++Expr11 | --Expr11 | !Expr11 | +Expr11 | -Expr11 | ~Expr11
 
-Expr11 -> Func Expr11R | id Expr11R | Array Expr11R | (Type)Expr Expr11R | (Expr) Expr11R | Const
+Expr11 -> Func Expr11R | id Expr11R | Array Expr11R | (Type)Expr Expr11R | (Expr) Expr11R | ConstValue
 Expr11R -> ++ | -- | epsilon
