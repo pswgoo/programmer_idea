@@ -1,27 +1,10 @@
-Type -> bool | char | int | float | double
+Prog ->  Prog1 Prog | epsilon
+Prog1 -> Stmt1 | Type Prog2
+Prog2 -> id Prog3 | & id Decl3
+Prog3 -> Decl2 | FuncDef1
 
-ConstDef -> const Type id = ConstValue
-ConstValue -> boolean | ch | integer | real | str | null
-ConstInt -> integer | id
-
-Decl -> Type id Decl1 | Type& id Decl1 | Type id[] Decl1
-Decl1 -> [ConstInt] Decl1 | epsilon
-
-Def -> Decl = Expr | Decl = InitList
-InitList -> {Args} | str
-
-Array -> id Array1
-Array1 -> [ConstInt]Array1 | epsilon
-
-FuncDef -> Type id(Param) { Stmts } |  void id(Param) { Stmts }
-Param -> Decl Param1
-Param1 -> ,Decl Param1 | epsilon
-
-Func -> id(Args)
-Args -> Expr ArgList | epsilon
-ArgList -> ,Expr ArgList | epsilon
-
-Stmt -> Expr; | Decl; | ConstDef; | return Expr; | return;
+Stmt -> Decl; | Stmt1
+Stmt1 -> Expr; | ConstDef; | return Expr; | return;
 	 -> {Stmts}
 	 -> for (Def; Expr ; Expr) LoopStmt
 	 -> for (Expr; Expr ; Expr) LoopStmt
@@ -39,7 +22,33 @@ LoopStmt -> continue; | StmtWithBreak | {LoopStmts}
 LoopStmts -> LoopStmt LoopStmts | epsilon
 
 Case -> case ConstInt : StmtWithBreak Case1 | case ConstInt : StmtWithBreak Case1 default: StmtWithBreak
+
 Case1 -> case ConstInt : StmtWithBreak Case1 | epsilon
+Type -> bool | char | int | float | double
+
+ConstDef -> const Type id = ConstValue
+ConstValue -> boolean | ch | integer | real | str | null
+ConstInt -> integer | id
+
+Decl -> Type Decl1
+Decl1 -> id Decl2 | & id Decl3
+Decl2 -> [] Decl3 | Decl3
+Decl3 -> [ConstInt] Decl3 | epsilon
+
+Def -> Decl = Expr | Decl = InitList
+InitList -> {Args} | str
+
+Array -> id Array1
+Array1 -> [ConstInt]Array1 | epsilon
+
+FuncDef -> Type id FuncDef1 | void id FuncDef1
+FuncDef1 -> (Param) { Stmts }
+Param -> Decl Param1
+Param1 -> ,Decl Param1 | epsilon
+
+Func -> id(Args)
+Args -> Expr ArgList | epsilon
+ArgList -> ,Expr ArgList | epsilon
 
 Expr -> Expr1 ExprR
 ExprR -> = Expr ExprR | += Expr ExprR | -= Expr ExprR | *= Expr ExprR | /= Expr ExprR | %= Expr ExprR | epsilon

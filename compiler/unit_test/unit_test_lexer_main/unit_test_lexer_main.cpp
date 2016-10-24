@@ -26,6 +26,7 @@ int main(int argc, char** argv) {
 
 if a<=b>cd==<(=== = = else cc3 =a1 + bb2/2432*3 + 2 - (-c+d)*((bc2+c)/(342- 4))+psw
 .343 =.43
+int a= 3+++,--i;
 
 	)DELIM";
 	

@@ -6,6 +6,7 @@
 using namespace std;
 
 namespace pswgoo {
+
 const Lexer::Token Lexer::kNonToken_ = Lexer::Token();
 
 // "true" and "false" are viewed as key words(with token type BOOLEAN)

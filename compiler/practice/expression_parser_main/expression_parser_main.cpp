@@ -21,10 +21,12 @@ F' -> /GF' | *GF' | epsilon
 G -> (E) | D | -G
 **/
 
+namespace expression_main {
+
 class AstNode {
 public:
 	virtual int Value() const = 0;
-	
+
 	void Print(std::ostream& os) {
 		for (const string& str : ToStrings())
 			os << str << endl;
@@ -208,6 +210,8 @@ private:
 	Lexer lexer_;
 };
 
+} // namespace expression_main
+
 int main(int argc, char** argv) {
 
 	string eA = "-(2 + 34) /-(2 -54)*(-3/2) + ((3+-1)/(4-2)) ";
@@ -215,7 +219,7 @@ int main(int argc, char** argv) {
 	string eC = "6 / 3 * (2 + 3)";
 	cout << eA << endl;
 
-	IntExpression tree;
+	expression_main::IntExpression tree;
 	cout << "Parse: " << tree.Parse(eA) << endl;
 
 	ofstream fout("testA.txt");
