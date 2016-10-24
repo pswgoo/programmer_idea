@@ -1,6 +1,6 @@
 Prog ->  Prog1 Prog | epsilon
 Prog1 -> Stmt1 | Type Prog2
-Prog2 -> id Prog3 | & id Decl3
+Prog2 -> id Prog3 | & id Array
 Prog3 -> Decl2 | FuncDef1
 
 Stmt -> Decl; | Stmt1
@@ -31,15 +31,13 @@ ConstValue -> boolean | ch | integer | real | str | null
 ConstInt -> integer | id
 
 Decl -> Type Decl1
-Decl1 -> id Decl2 | & id Decl3
-Decl2 -> [] Decl3 | Decl3
-Decl3 -> [ConstInt] Decl3 | epsilon
+Decl1 -> id Decl2 | & id Array
+Decl2 -> [] Array | Array
+Array -> [ConstInt] Array | epsilon
+ArrayValue -> id Array
 
 Def -> Decl = Expr | Decl = InitList
 InitList -> {Args} | str
-
-Array -> id Array1
-Array1 -> [ConstInt]Array1 | epsilon
 
 FuncDef -> Type id FuncDef1 | void id FuncDef1
 FuncDef1 -> (Param) { Stmts }
@@ -82,5 +80,5 @@ Expr9R -> * Expr9 Expr9R | / Expr9 Expr9R | % Expr9 Expr9R | epsilon
 
 Expr10 -> ++Expr11 | --Expr11 | !Expr11 | +Expr11 | -Expr11 | ~Expr11
 
-Expr11 -> Func Expr11R | id Expr11R | Array Expr11R | (Type)Expr Expr11R | (Expr) Expr11R | ConstValue
+Expr11 -> Func Expr11R | id Expr11R | ArrayValue Expr11R | (Type)Expr Expr11R | (Expr) Expr11R | ConstValue
 Expr11R -> ++ | -- | epsilon
