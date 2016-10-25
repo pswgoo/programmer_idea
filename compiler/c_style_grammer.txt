@@ -80,7 +80,7 @@ Expr8R -> + Expr8 Expr8R | - Expr8 Expr8R | epsilon
 Expr9 -> Expr10 Expr9R
 Expr9R -> * Expr9 Expr9R | / Expr9 Expr9R | % Expr9 Expr9R | epsilon
 
-Expr10 -> ++Expr11 | --Expr11 | !Expr11 | +Expr11 | -Expr11 | ~Expr11
+Expr10 -> ++Expr11 | --Expr11 | !Expr11 | +Expr11 | -Expr11 | ~Expr11 | Expr11
 
 Expr11 -> Func Expr11R | IdValue Expr11R | (Type)Expr Expr11R | (Expr) Expr11R | ConstValue
 Expr11R -> ++ | -- | epsilon

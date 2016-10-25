@@ -30,8 +30,8 @@ int a= 3+++,--i;
 
 	)DELIM";
 	
-	int a = 0;
-	double d = a+=4 - 3;
+	int a = 0,c=1;
+	double d = a+=c+=a;
 
 	Lexer lexer; 
 	int ret = lexer.Tokenize(test_str);
