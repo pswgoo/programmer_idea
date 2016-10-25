@@ -124,8 +124,11 @@ private:
 
 class ClExprNode : public ClAstNode {
 public:
-	static ClAstPtr Parse(Lexer& lexer, ClAstPtr&& inherit, SymbolTable& symbol_table);
+	static ClAstPtr Parse(Lexer& lexer, SymbolTable& symbol_table);
 
+private:
+	static ClAstPtr ParseR(Lexer& lexer, ClAstPtr&& inherit, SymbolTable& symbol_table);
+	static ClAstPtr ParseExpr1(Lexer& lexer, SymbolTable& symbol_table);
 };
 
 class ClParser {

@@ -37,12 +37,12 @@ ClBinaryOpNode::ClBinaryOpNode(ClAstPtr&& lhs, ClAstPtr&& rhs, TokenType token_t
 	case TokenType::OP_PRODUCT_ASSIGN:
 	case TokenType::OP_DIVIDE_ASSIGN:
 	case TokenType::OP_MOD_ASSIGN:
-		if (rhs->value_type_.prime_type() == VariableType::kNull)
-			throw runtime_error("ClBinaryOpNode:: null cannot be rvalue!");
+		if (lhs->value_type_.is_rvalue())
+			throw runtime_error("ClBinaryOpNode:: lhs of ASSIGN OP cannot be rvalue!");
 		if (lhs->value_type_.prime_type() < rhs->value_type_.prime_type())
-			runtime_error("ClBinaryOpNode:: Type narrowed with " + TokenTypeToCmd(token_type));
+			throw runtime_error("ClBinaryOpNode:: Type narrowed with " + TokenTypeToCmd(token_type));
 		if (lhs->value_type_.prime_type() == VariableType::kBoolean && token_type != TokenType::OP_ASSIGN)
-			runtime_error("ClBinaryOpNode:: boolean can only do assign");
+			throw runtime_error("ClBinaryOpNode:: boolean can only do assign");
 		value_type_ = lhs->value_type_;
 		break;
 	default:
@@ -176,6 +176,19 @@ int ClParser::ParseConstInt(Lexer & lexer, const SymbolTable& symbol_table) {
 		throw runtime_error("ClParser:: Parse const int \"" + const_id + "\" failed");
 	lexer.ToNext();
 	return ret;
+}
+
+ClAstPtr ClExprNode::Parse(Lexer & lexer, SymbolTable & symbol_table) {
+	ClAstPtr ret_ptr = ParseExpr1(lexer, symbol_table);
+	return ParseR(lexer, move(ret_ptr), symbol_table);
+}
+
+ClAstPtr ClExprNode::ParseR(Lexer & lexer, ClAstPtr && inherit, SymbolTable & symbol_table) {
+	return ClAstPtr();
+}
+
+ClAstPtr ClExprNode::ParseExpr1(Lexer & lexer, SymbolTable & symbol_table) {
+	return ClAstPtr();
 }
 
 } // namespace pswgoo
