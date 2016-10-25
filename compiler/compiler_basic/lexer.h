@@ -61,7 +61,7 @@ public:
 	bool Consume(TokenType token) {
 		if (Current().type_ != token)
 			return false;
-			//throw ("Token Consume not match: " + kTokenTypeStr[token] + "!=" + Current().value_);
+		throw std::runtime_error("Token Consume not match: " + kTokenTypeStr[token] + "!=" + Current().value_);
 		++cursor_;
 		return true;
 	}

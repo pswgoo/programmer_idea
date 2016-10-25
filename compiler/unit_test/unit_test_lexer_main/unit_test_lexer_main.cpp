@@ -30,7 +30,7 @@ int a= 3+++,--i;
 
 	)DELIM";
 	
-	double a =.19;
+	double d =.19;
 
 	Lexer lexer; 
 	int ret = lexer.Tokenize(test_str);
