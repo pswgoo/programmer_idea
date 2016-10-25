@@ -73,7 +73,10 @@ struct SymbolNode {
 class SymbolTable {
 	static const int64_t kStartAddress = 1;
 public:
-	SymbolTable(const SymbolTable* parent = nullptr) :parent_(parent), top_address_(parent_->top_address_){}
+	SymbolTable(const SymbolTable* parent = nullptr) :parent_(parent), top_address_(parent_->top_address_) { 
+		if (!parent) 
+			top_address_ = kStartAddress; 
+	}
 
 	SymbolNode* PutTemp(VariableType::PrimeType type) {
 		SymbolNode node;
