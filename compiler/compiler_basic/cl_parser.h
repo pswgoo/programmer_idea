@@ -132,6 +132,8 @@ private:
 
 class ClExprNode : public ClAstNode {
 public:
+	ClExprNode(Lexer& lexer, SymbolTable& symbol_table);
+
 	static ClAstPtr Parse(Lexer& lexer, SymbolTable& symbol_table);
 
 private:

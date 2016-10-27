@@ -211,6 +211,10 @@ int ClParser::ParseConstInt(Lexer& lexer, const SymbolTable& symbol_table) {
 	return ret;
 }
 
+ClExprNode::ClExprNode(Lexer & lexer, SymbolTable & symbol_table) {
+	
+}
+
 ClAstPtr ClExprNode::Parse(Lexer & lexer, SymbolTable & symbol_table) {
 	ClAstPtr left_ptr = ParseE1(lexer, symbol_table);
 	return ParseR(lexer, move(left_ptr), symbol_table);
