@@ -9,7 +9,7 @@ namespace pswgoo {
 
 class VariableType {
 public:
-	enum PrimeType { kNotVariable, kNull, kBoolean, kChar, kInt, kFloat, kDouble };
+	enum PrimeType { kNotVariable, kNull, kBoolean, kChar, kInt, kFloat, kDouble, kPointer };
 	static const std::vector<int> kPrimeTypeWidth;
 
 	VariableType(PrimeType type = kNotVariable, bool is_ref = false) : prime_type_(type), is_ref_(is_ref) { width_.push_back(kPrimeTypeWidth[prime_type_]); }
@@ -41,7 +41,7 @@ private:
 	bool is_const_ = false;
 };
 
-VariableType MaxType(const VariableType& lhs, const VariableType& rhs) {
+inline VariableType MaxType(const VariableType& lhs, const VariableType& rhs) {
 	if (lhs.IsPrimeType() && rhs.IsPrimeType()) {
 		if (lhs.prime_type() > rhs.prime_type())
 			return lhs;
@@ -73,9 +73,11 @@ struct SymbolNode {
 class SymbolTable {
 	static const int64_t kStartAddress = 1;
 public:
-	SymbolTable(const SymbolTable* parent = nullptr) :parent_(parent), top_address_(parent_->top_address_) { 
-		if (!parent) 
-			top_address_ = kStartAddress; 
+	SymbolTable(const SymbolTable* parent = nullptr) :parent_(parent) { 
+		if (!parent)
+			top_address_ = kStartAddress;
+		else
+			top_address_ = parent_->top_address_;
 	}
 
 	SymbolNode* PutTemp(VariableType::PrimeType type) {

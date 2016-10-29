@@ -10,6 +10,17 @@ namespace pswgoo {
 
 const string kEmptyCmdArg = "##";
 
+void ClCodeBlock::Print(std::ostream& os) {
+	if (code_blocks_.empty()) {
+		for (int i = 0; i < leaf_code_->size(); ++i)
+			os << leaf_code_->at(i) << "\t";
+		os << endl;
+	}
+	else
+		for (const ClCodePtr& ptr : code_blocks_)
+			ptr->Print(os);
+}
+
 bool IsPrimeType(TokenType token_type) {
 	switch (token_type) {
 	case TokenType::KEY_BOOL:
@@ -21,6 +32,30 @@ bool IsPrimeType(TokenType token_type) {
 	default:
 		return false;
 	}
+}
+
+VariableType::PrimeType TokenTypeToPrimeType(TokenType token_type) {
+	switch (token_type) {
+	case TokenType::KEY_BOOL:
+	case TokenType::BOOLEAN:
+		return VariableType::PrimeType::kBoolean;
+	case TokenType::KEY_CHAR:
+	case TokenType::CHAR:
+		return VariableType::PrimeType::kChar;
+	case TokenType::KEY_INT:
+	case TokenType::INTEGER:
+		return VariableType::PrimeType::kInt;
+	case TokenType::KEY_FLOAT:
+		return VariableType::PrimeType::kFloat;
+	case TokenType::KEY_DOUBLE:
+	case TokenType::REAL:
+		return VariableType::PrimeType::kDouble;
+	case TokenType::KEY_NULL:
+		return VariableType::PrimeType::kNull;
+	default:
+		break;
+	}
+	return VariableType::PrimeType::kNotVariable;
 }
 
 ClBinaryOpNode::ClBinaryOpNode(ClAstPtr&& lhs, ClAstPtr&& rhs, TokenType token_type, SymbolTable& symbol_table) {
@@ -63,7 +98,7 @@ ClBinaryOpNode::ClBinaryOpNode(ClAstPtr&& lhs, ClAstPtr&& rhs, TokenType token_t
 			throw runtime_error("ClBinaryOpNode:: Type narrowed with " + TokenTypeToCmd(token_type));
 		if (lhs->value_type_.prime_type() == VariableType::kBoolean && token_type != TokenType::OP_ASSIGN)
 			throw runtime_error("ClBinaryOpNode:: boolean can only do assign");
-		value_type_ = lhs->value_type_; 
+		value_type_ = lhs->value_type_;
 		value_ = lhs->value_;
 		is_assign = true;
 		break;
@@ -111,7 +146,7 @@ ClIncreDecreOpNode::ClIncreDecreOpNode(ClAstPtr&& lhs, TokenType token_type, boo
 		throw runtime_error("ClIncrementDecrementNode:: Invalid IncrementDecrement operator! " + TokenTypeToCmd(token_type));
 	else if (lhs->value_type_.is_rvalue() || !lhs->value_type_.IsPrimeType() || lhs->value_type_.prime_type() == VariableType::kBoolean || lhs->value_type_.prime_type() == VariableType::kNull)
 		throw runtime_error("ClIncrementDecrementNode:: Invalid value_type");
-	
+
 	SymbolNode *tmp_node = symbol_table.PutTemp(lhs->value_type_.prime_type());
 	code_.reset(new ClCodeBlock(lhs->code_));
 	value_ = tmp_node->name();
@@ -169,16 +204,16 @@ ClAstPtr ClDeclNode::ParseDecl2(Lexer & lexer, const std::string& id, VariableTy
 		symbol_table.Put(symbol);
 		ret_ptr->value_ = symbol.name();
 		return ret_ptr;
+		}
+		else */{
+			ClAstPtr ret_ptr = ParseArray(lexer, type, symbol_table);
+			int64_t width = ret_ptr->value_type_.width().front();
+			SymbolNode symbol(id, SymbolNode::kVariable, ret_ptr->value_type_, symbol_table.Alloc(width));
+			symbol_table.Put(symbol);
+			ret_ptr->value_ = symbol.name();
+			return ret_ptr;
 	}
-	else */{
-		ClAstPtr ret_ptr = ParseArray(lexer, type, symbol_table);
-		int64_t width = ret_ptr->value_type_.width().front();
-		SymbolNode symbol(id, SymbolNode::kVariable, ret_ptr->value_type_, symbol_table.Alloc(width));
-		symbol_table.Put(symbol);
-		ret_ptr->value_ = symbol.name();
-		return ret_ptr;
-	}
-	return nullptr;
+return nullptr;
 }
 
 ClAstPtr ClDeclNode::ParseArray(Lexer & lexer, VariableType::PrimeType type, SymbolTable & symbol_table) {
@@ -212,7 +247,12 @@ int ClParser::ParseConstInt(Lexer& lexer, const SymbolTable& symbol_table) {
 }
 
 ClExprNode::ClExprNode(Lexer & lexer, SymbolTable & symbol_table) {
-	
+	ClAstPtr expr = Parse(lexer, symbol_table);
+	node_type_ = "ExprNode";
+	children_.emplace_back(move(expr));
+	code_.reset(new ClCodeBlock(expr->code_));
+	value_ = expr->value_;
+	value_type_ = expr->value_type_;
 }
 
 ClAstPtr ClExprNode::Parse(Lexer & lexer, SymbolTable & symbol_table) {
@@ -393,6 +433,7 @@ ClAstPtr ClExprNode::ParseE10(Lexer& lexer, SymbolTable& symbol_table) {
 }
 
 ClAstPtr ClExprNode::ParseE11(Lexer& lexer, SymbolTable& symbol_table) {
+	clog << "ParseE11 : " << lexer.Current().ToString() << endl;
 	if (lexer.Current().type_ == TokenType::OP_LEFT_PARENTHESIS) {
 		lexer.ToNext();
 		if (IsPrimeType(lexer.Current().type_)) {
@@ -420,6 +461,8 @@ ClAstPtr ClExprNode::ParseE11(Lexer& lexer, SymbolTable& symbol_table) {
 				throw runtime_error("ClExprNode:: Function not implement now");
 			}
 		}
+		else
+			throw runtime_error("ClExprNode:: " + lexer.Current().value_ + " not declared!");
 	}
 	else if (TokenTypeToPrimeType(lexer.Current().type_) != VariableType::kNotVariable && !IsPrimeType(lexer.Current().type_)) {
 		VariableType::PrimeType type = TokenTypeToPrimeType(lexer.Current().type_);
@@ -436,7 +479,37 @@ ClAstPtr ClExprNode::ParseE11R(Lexer& lexer, ClAstPtr&& inherit, SymbolTable& sy
 }
 
 ClAstPtr ClExprNode::ParseIdValue(Lexer& lexer, SymbolTable& symbol_table) {
+	if (lexer.Current().type_ == TokenType::IDENTIFIER) {
+		string id = lexer.ToNext().value_;
+		const SymbolNode* symbol = symbol_table.Get(id);
+		if (symbol == nullptr)
+			throw runtime_error("ClIdNode:: id not exists: " + id);
+		ClAstPtr id_node(new ClAstNode);
+		if (lexer.Current().type_ == OP_LEFT_BRACKET) {
+			id_node->node_type_ = "Array";
+			SymbolNode* tmp_symbol = symbol_table.PutTemp(VariableType::kPointer);
+			ClCodeLine code = { TokenTypeToCmd(OP_ASSIGN), kLiteralValueIndicator + symbol->name(), kEmptyCmdArg, tmp_symbol->name() };
+			id_node->code_.reset(new ClCodeBlock(code));
+			id_node->value_ = tmp_symbol->name();
+			id_node->value_type_ = tmp_symbol->type_;
+			return ParseIdValue1(lexer, move(id_node), symbol_table);
+		}
+		else {
+			id_node->node_type_ = "Id";
+			id_node->value_ = symbol->name();
+			id_node->value_type_ = symbol->type_;
+			return move(id_node);
+		}
+	}
 	return nullptr;
+}
+
+ClAstPtr ClExprNode::ParseIdValue1(Lexer& lexer, ClAstPtr&& inherit, SymbolTable& symbol_table) {
+	if (lexer.Current().type_ == OP_LEFT_BRACKET) {
+		ClAstPtr expr(new ClExprNode(lexer, symbol_table));
+		
+	}
+	return move(inherit);
 }
 
 } // namespace pswgoo

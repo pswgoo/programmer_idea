@@ -1,2 +1,3 @@
 
 add_subdirectory(unit_test_lexer_main)
+add_subdirectory(unit_test_clparser_main)

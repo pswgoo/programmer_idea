@@ -65,6 +65,7 @@ public:
 		++cursor_;
 		return true;
 	}
+	void set_cursor(int cursor) { cursor_ = cursor; }
 
 	struct Token {
 		Token() = default;

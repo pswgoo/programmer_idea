@@ -14,6 +14,9 @@ typedef std::vector<std::string> ClCodeLine;
 class ClCodeBlock;
 typedef std::shared_ptr<ClCodeBlock> ClCodePtr;
 
+const std::string kLiteralValueIndicator = "$";
+const std::string kDereferenceValueIndicator = "@";
+
 class ClCodeBlock {
 public:
 	ClCodeBlock() = default;
@@ -27,6 +30,8 @@ public:
 		code_blocks_.emplace_back(code_ptr);
 	}
 
+	void Print(std::ostream& os);
+
 private:
 	std::unique_ptr<ClCodeLine> leaf_code_;
 	std::vector<ClCodePtr> code_blocks_;
@@ -39,6 +44,11 @@ class ClAstNode {
 public:
 	ClAstNode() {};
 
+	void Print(std::ostream& os) {
+		if (code_ != nullptr)
+			code_->Print(os);
+	}
+
 public:
 	std::string value_;			// name or lexeme value
 	std::string node_type_ = "AstNode";
@@ -47,33 +57,11 @@ public:
 	std::vector<ClAstPtr> children_;
 };
 
-std::string TokenTypeToCmd(TokenType token_type) {
+inline std::string TokenTypeToCmd(TokenType token_type) {
 	return kTokenTypeStr[token_type];
 }
 
-VariableType::PrimeType TokenTypeToPrimeType(TokenType token_type) {
-	switch (token_type) {
-	case TokenType::KEY_BOOL:
-	case TokenType::BOOLEAN:
-		return VariableType::PrimeType::kBoolean;
-	case TokenType::KEY_CHAR:
-	case TokenType::CHAR:
-		return VariableType::PrimeType::kChar;
-	case TokenType::KEY_INT:
-	case TokenType::INTEGER:
-		return VariableType::PrimeType::kInt;
-	case TokenType::KEY_FLOAT:
-		return VariableType::PrimeType::kFloat;
-	case TokenType::KEY_DOUBLE:
-	case TokenType::REAL:
-		return VariableType::PrimeType::kDouble;
-	case TokenType::KEY_NULL:
-		return VariableType::PrimeType::kNull;
-	default:
-		break;
-	}
-	return VariableType::PrimeType::kNotVariable;
-}
+VariableType::PrimeType TokenTypeToPrimeType(TokenType token_type);
 
 bool IsPrimeType(TokenType token_type);
 
@@ -83,16 +71,17 @@ public:
 		node_type_ = "PrimeType";
 		value_type_ = VariableType(type);
 		value_type_.set_is_rvalue(true);
+		value_ = kLiteralValueIndicator;
 		if (type == VariableType::kBoolean) {
 			if (value == "true")
-				value_ = "1";
+				value_ += "1";
 			else
-				value_ = "0";
+				value_ += "0";
 		}
 		else if (type == VariableType::kNull)
-			value_ = "0";
+			value_ += "0";
 		else
-			value_ = value;
+			value_ += value;
 	}
 };
 
@@ -137,8 +126,6 @@ public:
 	static ClAstPtr Parse(Lexer& lexer, SymbolTable& symbol_table);
 
 private:
-	static ClAstPtr ParseIdValue(Lexer& lexer, SymbolTable& symbol_table);
-
 	// right association
 	static ClAstPtr ParseR(Lexer& lexer, ClAstPtr&& inherit, SymbolTable& symbol_table);
 
@@ -174,12 +161,18 @@ private:
 	static ClAstPtr ParseE11(Lexer& lexer, SymbolTable& symbol_table);
 	static ClAstPtr ParseE11R(Lexer& lexer, ClAstPtr&& inherit, SymbolTable& symbol_table);
 
+	static ClAstPtr ParseIdValue(Lexer& lexer, SymbolTable& symbol_table);
+	static ClAstPtr ParseIdValue1(Lexer& lexer, ClAstPtr&& inherit, SymbolTable& symbol_table);
 
 };
+
+
 
 class ClParser {
 public:
 	static int ParseConstInt(Lexer& lexer, const SymbolTable& symbol_table);
+
+
 
 private:
 	Lexer lexer_;
