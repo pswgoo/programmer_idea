@@ -51,34 +51,34 @@ Args -> Expr ArgList | epsilon
 ArgList -> ,Expr ArgList | epsilon
 
 Expr -> Expr1 ExprR
-ExprR -> = Expr ExprR | += Expr ExprR | -= Expr ExprR | *= Expr ExprR | /= Expr ExprR | %= Expr ExprR | epsilon
+ExprR -> = Expr1 ExprR | += Expr1 ExprR | -= Expr1 ExprR | *= Expr1 ExprR | /= Expr1 ExprR | %= Expr1 ExprR | epsilon
 
 Expr1 -> Expr2 Expr1R
-Expr1R -> || Expr1 Expr1R | epsilon
+Expr1R -> || Expr2 Expr1R | epsilon
 
 Expr2 -> Expr3 Expr2R
-Expr2R -> && Expr2 Expr2R | epsilon
+Expr2R -> && Expr3 Expr2R | epsilon
 
 Expr3 -> Expr4 Expr3R
 Expr3R -> '|' Expr3 Expr3R  | epsilon
 
 Expr4 -> Expr5 Expr4R
-Expr4R -> ^ Expr4 Expr4R | epsilon
+Expr4R -> ^ Expr5 Expr4R | epsilon
 
 Expr5 -> Expr6 Expr5R
-Expr5R -> & Expr5 Expr5R | epsilon
+Expr5R -> & Expr6 Expr5R | epsilon
 
 Expr6 -> Expr7 Expr6R
-Expr6R -> == Expr6 Expr6R | != Expr6 Expr6R | epsilon
+Expr6R -> == Expr7 Expr6R | != Expr7 Expr6R | epsilon
 
 Expr7 -> Expr8 Expr7R
-Expr7R -> < Expr7 Expr7R | > Expr7 Expr7R | <= Expr7 Expr7R | >= Expr7 Expr7R  | epsilon
+Expr7R -> < Expr8 Expr7R | > Expr8 Expr7R | <= Expr8 Expr7R | >= Expr8 Expr7R  | epsilon
 
 Expr8 -> Expr9 Expr8R
-Expr8R -> + Expr8 Expr8R | - Expr8 Expr8R | epsilon
+Expr8R -> + Expr9 Expr8R | - Expr9 Expr8R | epsilon
 
 Expr9 -> Expr10 Expr9R
-Expr9R -> * Expr9 Expr9R | / Expr9 Expr9R | % Expr9 Expr9R | epsilon
+Expr9R -> * Expr10 Expr9R | / Expr10 Expr9R | % Expr10 Expr9R | epsilon
 
 Expr10 -> ++Expr11 | --Expr11 | !Expr11 | +Expr11 | -Expr11 | ~Expr11 | Expr11
 

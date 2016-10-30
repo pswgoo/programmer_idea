@@ -270,7 +270,7 @@ ClAstPtr ClExprNode::ParseR(Lexer & lexer, ClAstPtr&& inherit, SymbolTable & sym
 	case TokenType::OP_DIVIDE_ASSIGN:
 	case TokenType::OP_MOD_ASSIGN: {
 		lexer.ToNext();
-		ClAstPtr ptr_expr = Parse(lexer, symbol_table);
+		ClAstPtr ptr_expr = ParseE1(lexer, symbol_table);
 		ClAstPtr ptr_expr_r = ParseR(lexer, move(ptr_expr), symbol_table);
 		return ClAstPtr(new ClBinaryOpNode(move(inherit), move(ptr_expr_r), op_type, symbol_table));
 	}
@@ -288,7 +288,7 @@ ClAstPtr ClExprNode::ParseE1(Lexer & lexer, SymbolTable & symbol_table) {
 ClAstPtr ClExprNode::ParseE1R(Lexer& lexer, ClAstPtr&& inherit, SymbolTable& symbol_table) {
 	if (lexer.Current().type_ == TokenType::OP_LOGICAL_OR) {
 		TokenType op_type = lexer.ToNext().type_;
-		ClAstPtr ptr_expr = ParseE1(lexer, symbol_table);
+		ClAstPtr ptr_expr = ParseE2(lexer, symbol_table);
 		ClAstPtr ptr_expr_r = ParseE1R(lexer, move(ptr_expr), symbol_table);
 		return ClAstPtr(new ClBinaryOpNode(move(inherit), move(ptr_expr_r), op_type, symbol_table));
 	}
@@ -303,7 +303,7 @@ ClAstPtr ClExprNode::ParseE2(Lexer& lexer, SymbolTable& symbol_table) {
 ClAstPtr ClExprNode::ParseE2R(Lexer& lexer, ClAstPtr&& inherit, SymbolTable& symbol_table) {
 	if (lexer.Current().type_ == TokenType::OP_LOGICAL_AND) {
 		TokenType op_type = lexer.ToNext().type_;
-		ClAstPtr ptr_expr = ParseE2(lexer, symbol_table);
+		ClAstPtr ptr_expr = ParseE3(lexer, symbol_table);
 		ClAstPtr ptr_left(new ClBinaryOpNode(move(inherit), move(ptr_expr), op_type, symbol_table));
 		return ParseE2R(lexer, move(ptr_left), symbol_table);
 	}
@@ -317,7 +317,7 @@ ClAstPtr ClExprNode::ParseE3(Lexer& lexer, SymbolTable& symbol_table) {
 ClAstPtr ClExprNode::ParseE3R(Lexer& lexer, ClAstPtr&& inherit, SymbolTable& symbol_table) {
 	if (lexer.Current().type_ == TokenType::OP_BIT_OR) {
 		TokenType op_type = lexer.ToNext().type_;
-		ClAstPtr ptr_expr = ParseE3(lexer, symbol_table);
+		ClAstPtr ptr_expr = ParseE4(lexer, symbol_table);
 		ClAstPtr ptr_left(new ClBinaryOpNode(move(inherit), move(ptr_expr), op_type, symbol_table));
 		return ParseE3R(lexer, move(ptr_left), symbol_table);
 	}
@@ -331,7 +331,7 @@ ClAstPtr ClExprNode::ParseE4(Lexer& lexer, SymbolTable& symbol_table) {
 ClAstPtr ClExprNode::ParseE4R(Lexer& lexer, ClAstPtr&& inherit, SymbolTable& symbol_table) {
 	if (lexer.Current().type_ == TokenType::OP_BIT_XOR) {
 		TokenType op_type = lexer.ToNext().type_;
-		ClAstPtr ptr_expr = ParseE4(lexer, symbol_table);
+		ClAstPtr ptr_expr = ParseE5(lexer, symbol_table);
 		ClAstPtr ptr_left(new ClBinaryOpNode(move(inherit), move(ptr_expr), op_type, symbol_table));
 		return ParseE4R(lexer, move(ptr_left), symbol_table);
 	}
@@ -345,7 +345,7 @@ ClAstPtr ClExprNode::ParseE5(Lexer& lexer, SymbolTable& symbol_table) {
 ClAstPtr ClExprNode::ParseE5R(Lexer& lexer, ClAstPtr&& inherit, SymbolTable& symbol_table) {
 	if (lexer.Current().type_ == TokenType::OP_BIT_AND) {
 		TokenType op_type = lexer.ToNext().type_;
-		ClAstPtr ptr_expr = ParseE5(lexer, symbol_table);
+		ClAstPtr ptr_expr = ParseE6(lexer, symbol_table);
 		ClAstPtr ptr_left(new ClBinaryOpNode(move(inherit), move(ptr_expr), op_type, symbol_table));
 		return ParseE5R(lexer, move(ptr_left), symbol_table);
 	}
@@ -359,7 +359,7 @@ ClAstPtr ClExprNode::ParseE6(Lexer& lexer, SymbolTable& symbol_table) {
 ClAstPtr ClExprNode::ParseE6R(Lexer& lexer, ClAstPtr&& inherit, SymbolTable& symbol_table) {
 	if (lexer.Current().type_ == TokenType::OP_EQUAL || lexer.Current().type_ == TokenType::OP_NOT_EQUAL) {
 		TokenType op_type = lexer.ToNext().type_;
-		ClAstPtr ptr_expr = ParseE6(lexer, symbol_table);
+		ClAstPtr ptr_expr = ParseE7(lexer, symbol_table);
 		ClAstPtr ptr_left(new ClBinaryOpNode(move(inherit), move(ptr_expr), op_type, symbol_table));
 		return ParseE6R(lexer, move(ptr_left), symbol_table);
 	}
@@ -374,7 +374,7 @@ ClAstPtr ClExprNode::ParseE7R(Lexer& lexer, ClAstPtr&& inherit, SymbolTable& sym
 	if (lexer.Current().type_ == TokenType::OP_LESS || lexer.Current().type_ == TokenType::OP_GREATER
 		|| lexer.Current().type_ == TokenType::OP_LESS_EQUAL || lexer.Current().type_ == TokenType::OP_GREATER_EQUAL) {
 		TokenType op_type = lexer.ToNext().type_;
-		ClAstPtr ptr_expr = ParseE7(lexer, symbol_table);
+		ClAstPtr ptr_expr = ParseE8(lexer, symbol_table);
 		ClAstPtr ptr_left(new ClBinaryOpNode(move(inherit), move(ptr_expr), op_type, symbol_table));
 		return ParseE7R(lexer, move(ptr_left), symbol_table);
 	}
@@ -388,7 +388,7 @@ ClAstPtr ClExprNode::ParseE8(Lexer& lexer, SymbolTable& symbol_table) {
 ClAstPtr ClExprNode::ParseE8R(Lexer& lexer, ClAstPtr&& inherit, SymbolTable& symbol_table) {
 	if (lexer.Current().type_ == TokenType::OP_ADD || lexer.Current().type_ == TokenType::OP_MINUS) {
 		TokenType op_type = lexer.ToNext().type_;
-		ClAstPtr ptr_expr = ParseE8(lexer, symbol_table);
+		ClAstPtr ptr_expr = ParseE9(lexer, symbol_table);
 		ClAstPtr ptr_left(new ClBinaryOpNode(move(inherit), move(ptr_expr), op_type, symbol_table));
 		return ParseE8R(lexer, move(ptr_left), symbol_table);
 	}
@@ -402,7 +402,7 @@ ClAstPtr ClExprNode::ParseE9(Lexer& lexer, SymbolTable& symbol_table) {
 ClAstPtr ClExprNode::ParseE9R(Lexer& lexer, ClAstPtr&& inherit, SymbolTable& symbol_table) {
 	if (lexer.Current().type_ == TokenType::OP_PRODUCT || lexer.Current().type_ == TokenType::OP_DIVIDE || lexer.Current().type_ == TokenType::OP_MOD) {
 		TokenType op_type = lexer.ToNext().type_;
-		ClAstPtr ptr_expr = ParseE9(lexer, symbol_table);
+		ClAstPtr ptr_expr = ParseE10(lexer, symbol_table);
 		ClAstPtr ptr_left(new ClBinaryOpNode(move(inherit), move(ptr_expr), op_type, symbol_table));
 		return ParseE9R(lexer, move(ptr_left), symbol_table);
 	}

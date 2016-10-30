@@ -13,7 +13,6 @@ int main(int argc, char** argv) {
 	int xxxx;
 	xxxx = 12 * 4 % 3;	
 
-
 	double a;
 	int b;
 	b = 12;
