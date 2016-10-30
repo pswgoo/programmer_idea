@@ -20,17 +20,18 @@ const std::string kDereferenceValueIndicator = "@";
 class ClCodeBlock {
 public:
 	ClCodeBlock() = default;
-	ClCodeBlock(const ClCodePtr& code) { code_blocks_.push_back(code); }
+	ClCodeBlock(const ClCodePtr& code) { if (code) code_blocks_.emplace_back(code); }
 	ClCodeBlock(const ClCodeLine& code) :leaf_code_(new ClCodeLine(code)) {}
 
 	void Add(const ClCodeLine& code) {
 		code_blocks_.emplace_back(new ClCodeBlock(code));
 	}
 	void Add(const ClCodePtr& code_ptr) {
-		code_blocks_.emplace_back(code_ptr);
+		if (code_ptr)
+			code_blocks_.emplace_back(code_ptr);
 	}
 
-	void Print(std::ostream& os);
+	void Print(std::ostream& os) const;
 
 private:
 	std::unique_ptr<ClCodeLine> leaf_code_;
@@ -109,11 +110,11 @@ class ClDeclNode : public ClAstNode {
 public:
 	ClDeclNode(VariableType::PrimeType type) {
 		value_type_ = VariableType(type);
+		node_type_ = "Decl";
 	}
 
 	static ClAstPtr Parse(Lexer& lexer, SymbolTable& symbol_table);
 
-private:
 	static ClAstPtr ParseDecl1(Lexer& lexer, VariableType::PrimeType type, SymbolTable& symbol_table);
 	static ClAstPtr ParseDecl2(Lexer& lexer, const std::string& id, VariableType::PrimeType type, SymbolTable& symbol_table);
 	static ClAstPtr ParseArray(Lexer& lexer, VariableType::PrimeType type, SymbolTable& symbol_table);
@@ -166,16 +167,27 @@ private:
 
 };
 
-
-
 class ClParser {
 public:
 	static int ParseConstInt(Lexer& lexer, const SymbolTable& symbol_table);
 
+	void Parse(const std::string& program);
 
+	void Print(std::ostream& os) {
+		for (const ClAstPtr& ptr : programs_)
+			ptr->Print(os);
+	}
+
+	ClAstPtr ParseProg1();
+	ClAstPtr ParseProg2(const VariableType::PrimeType type);
+	ClAstPtr ParseProg3(const std::string& id, const VariableType::PrimeType type);
+
+	ClAstPtr ParseStmt1();
 
 private:
 	Lexer lexer_;
+	std::vector<ClAstPtr> programs_;
+	SymbolTable symbol_table_;
 };
 
 } // namespace pswgoo

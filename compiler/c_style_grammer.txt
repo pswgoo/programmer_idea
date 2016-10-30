@@ -1,7 +1,7 @@
 Prog ->  Prog1 Prog | epsilon
 Prog1 -> Stmt1 | Type Prog2
 Prog2 -> id Prog3 | & id Array
-Prog3 -> Decl2 | FuncDef1
+Prog3 -> Decl2; | FuncDef1
 
 Stmt -> Decl; | Stmt1
 Stmt1 -> Expr; | ConstDef; | return Expr; | return;

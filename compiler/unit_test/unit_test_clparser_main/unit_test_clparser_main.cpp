@@ -10,13 +10,17 @@ int main(int argc, char** argv) {
 	//if a<=b>cd==<(=== = = else cc3 =a1 + bb2/2432*3 + 2 - (-c+d)*((bc2+c)/(342- 4))+psw
 	string test_str = R"DELIM(
 	
-	a = 1e-10
-
-
+	double a;
+	int b;
+	b = 12;
+	a = 1e-10;
+	double c;
+	c = 12 * 4 + (b / 2) + a;
+	double d;
+	d += c + a;
+	bool e;
+	e = d > c;
 	)DELIM";
-
-	int a = 0, c = 1;
-	double d = a += c += a;
 
 	Lexer lexer;
 	int ret = lexer.Tokenize(test_str);
@@ -27,11 +31,10 @@ int main(int argc, char** argv) {
 		lexer.ToNext();
 	}
 
-	lexer.set_cursor(0);
 	try {
-		SymbolTable symbol_table;
-		ClExprNode expr_node(lexer, symbol_table);
-		expr_node.Print(cout);
+		ClParser parser;
+		parser.Parse(test_str);
+		parser.Print(cout);
 	} catch (const exception& e) {
 		cerr << e.what() << endl;
 	}

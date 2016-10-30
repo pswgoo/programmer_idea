@@ -10,7 +10,7 @@ namespace pswgoo {
 
 const string kEmptyCmdArg = "##";
 
-void ClCodeBlock::Print(std::ostream& os) {
+void ClCodeBlock::Print(std::ostream& os) const {
 	if (code_blocks_.empty()) {
 		for (int i = 0; i < leaf_code_->size(); ++i)
 			os << leaf_code_->at(i) << "\t";
@@ -249,10 +249,10 @@ int ClParser::ParseConstInt(Lexer& lexer, const SymbolTable& symbol_table) {
 ClExprNode::ClExprNode(Lexer & lexer, SymbolTable & symbol_table) {
 	ClAstPtr expr = Parse(lexer, symbol_table);
 	node_type_ = "ExprNode";
-	children_.emplace_back(move(expr));
 	code_.reset(new ClCodeBlock(expr->code_));
 	value_ = expr->value_;
 	value_type_ = expr->value_type_;
+	children_.emplace_back(move(expr));
 }
 
 ClAstPtr ClExprNode::Parse(Lexer & lexer, SymbolTable & symbol_table) {
@@ -433,7 +433,7 @@ ClAstPtr ClExprNode::ParseE10(Lexer& lexer, SymbolTable& symbol_table) {
 }
 
 ClAstPtr ClExprNode::ParseE11(Lexer& lexer, SymbolTable& symbol_table) {
-	clog << "ParseE11 : " << lexer.Current().ToString() << endl;
+	//clog << "ParseE11 : " << lexer.Current().ToString() << endl;
 	if (lexer.Current().type_ == TokenType::OP_LEFT_PARENTHESIS) {
 		lexer.ToNext();
 		if (IsPrimeType(lexer.Current().type_)) {
@@ -510,6 +510,47 @@ ClAstPtr ClExprNode::ParseIdValue1(Lexer& lexer, ClAstPtr&& inherit, SymbolTable
 		
 	}
 	return move(inherit);
+}
+
+void ClParser::Parse(const std::string & program) {
+	lexer_.Tokenize(program);
+	while (!lexer_.Current().Non()) {
+		programs_.emplace_back(ParseProg1());
+	}
+}
+
+ClAstPtr ClParser::ParseProg1() {
+	if (IsPrimeType(lexer_.Current().type_)) {
+		TokenType token_type = lexer_.ToNext().type_;
+		return ParseProg2(TokenTypeToPrimeType(token_type));
+	}
+	return ParseStmt1();
+}
+
+ClAstPtr ClParser::ParseProg2(const VariableType::PrimeType type) {
+	if (lexer_.Current().type_ == IDENTIFIER) {
+		return ParseProg3(lexer_.ToNext().value_, type);
+	}
+	// TODO:
+	else if(lexer_.Current().type_ == TokenType::OP_LOGICAL_AND) {
+		lexer_.ToNext();
+		string id = lexer_.Current().value_;
+		//parse array
+	}
+	throw runtime_error("ClParser:: ParseProg2 failed, cur=" + lexer_.Current().ToString());
+	return nullptr;
+}
+
+ClAstPtr ClParser::ParseProg3(const std::string & id, const VariableType::PrimeType type) {
+	ClAstPtr ret_ptr = ClDeclNode::ParseDecl2(lexer_, id, type, symbol_table_);
+	lexer_.Consume(TokenType::OP_SEMICOLON);
+	return ret_ptr;
+}
+
+ClAstPtr ClParser::ParseStmt1() {
+	ClAstPtr ret_ptr(new ClExprNode(lexer_, symbol_table_));
+	lexer_.Consume(TokenType::OP_SEMICOLON);
+	return ret_ptr;
 }
 
 } // namespace pswgoo

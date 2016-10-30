@@ -59,9 +59,10 @@ public:
 	const Token& LookNext() const;
 	const Token& ToNext();
 	bool Consume(TokenType token) {
-		if (Current().type_ != token)
+		if (Current().type_ != token) {
 			return false;
-		throw std::runtime_error("Token Consume not match: " + kTokenTypeStr[token] + "!=" + Current().value_);
+			throw std::runtime_error("Token Consume not match: " + kTokenTypeStr[token] + "!=" + Current().value_);
+		}
 		++cursor_;
 		return true;
 	}
