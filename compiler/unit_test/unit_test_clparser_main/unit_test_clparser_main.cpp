@@ -7,7 +7,6 @@ using namespace std;
 using namespace pswgoo;
 
 int main(int argc, char** argv) {
-	//if a<=b>cd==<(=== = = else cc3 =a1 + bb2/2432*3 + 2 - (-c+d)*((bc2+c)/(342- 4))+psw
 	string test_str = R"DELIM(
 	
 	int xxxx;
@@ -25,7 +24,7 @@ int main(int argc, char** argv) {
 	e = d > c;
 
 	)DELIM";
-
+/*
 	Lexer lexer;
 	int ret = lexer.Tokenize(test_str);
 
@@ -34,7 +33,7 @@ int main(int argc, char** argv) {
 		cout << lexer.Current().ToString() << endl;
 		lexer.ToNext();
 	}
-
+*/
 	try {
 		ClParser parser;
 		parser.Parse(test_str);
