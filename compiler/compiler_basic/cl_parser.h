@@ -44,18 +44,29 @@ typedef std::unique_ptr<ClAstNode> ClAstPtr;
 class ClAstNode {
 public:
 	ClAstNode() {};
+	enum StoreType { kLiteralValue, kAddress, kReference };
 
 	void Print(std::ostream& os) {
 		if (code_ != nullptr)
 			code_->Print(os);
 	}
 
+	void set_value(StoreType store_type, const std::string& value);
+	StoreType store_type() const { return store_type_; }
+	std::string value() const { return value_; }
+
+	std::string GetValueAddress() const;
+	std::string GetValue() const;
+
 public:
-	std::string value_;			// name or lexeme value
 	std::string node_type_ = "AstNode";
 	ClCodePtr code_;
 	VariableType value_type_;
 	std::vector<ClAstPtr> children_;
+
+private:
+	std::string value_;			// kLiteralValue, kAddress or kPointer
+	StoreType store_type_;
 };
 
 inline std::string TokenTypeToCmd(TokenType token_type) {
@@ -72,17 +83,16 @@ public:
 		node_type_ = "PrimeType";
 		value_type_ = VariableType(type);
 		value_type_.set_is_rvalue(true);
-		value_ = kLiteralValueIndicator;
 		if (type == VariableType::kBoolean) {
 			if (value == "true")
-				value_ += "1";
+				set_value(kLiteralValue, "1");
 			else
-				value_ += "0";
+				set_value(kLiteralValue, "0");
 		}
 		else if (type == VariableType::kNull)
-			value_ += "0";
+			set_value(kLiteralValue, "0");
 		else
-			value_ += value;
+			set_value(kLiteralValue, value);
 	}
 };
 

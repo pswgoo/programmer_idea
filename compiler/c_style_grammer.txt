@@ -31,7 +31,7 @@ ConstValue -> boolean | ch | integer | real | str | null
 ConstInt -> integer | id
 
 Decl -> Type Decl1
-Decl1 -> id Decl2 | & id Array
+Decl1 -> id Decl2 | & id
 Decl2 -> [] Array | Array
 Array -> [ConstInt] Array | epsilon
 

@@ -8,7 +8,7 @@ using namespace pswgoo;
 
 int main(int argc, char** argv) {
 	string test_str = R"DELIM(
-	
+
 	int xxxx;
 	xxxx = 12 * 4 % 3;	
 

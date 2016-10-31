@@ -99,7 +99,7 @@ ClBinaryOpNode::ClBinaryOpNode(ClAstPtr&& lhs, ClAstPtr&& rhs, TokenType token_t
 		if (lhs->value_type_.prime_type() == VariableType::kBoolean && token_type != TokenType::OP_ASSIGN)
 			throw runtime_error("ClBinaryOpNode:: boolean can only do assign");
 		value_type_ = lhs->value_type_;
-		value_ = lhs->value_;
+		set_value(lhs->store_type(), lhs->value());
 		is_assign = true;
 		break;
 	default:
@@ -113,12 +113,21 @@ ClBinaryOpNode::ClBinaryOpNode(ClAstPtr&& lhs, ClAstPtr&& rhs, TokenType token_t
 	code_->Add(rhs->code_);
 	if (!is_assign) {
 		SymbolNode* tmp_node = symbol_table.PutTemp(value_type_.prime_type());
-		value_ = tmp_node->name();
+		set_value(kAddress, tmp_node->name());
 		value_type_.set_is_rvalue(true);
-		code_->Add({ TokenTypeToCmd(token_type), lhs->value_, rhs->value_, value_ });
+		code_->Add({ TokenTypeToCmd(token_type), lhs->GetValue(), rhs->GetValue(), GetValue() });
 	}
-	else
-		code_->Add({ TokenTypeToCmd(token_type), rhs->value_, kEmptyCmdArg, value_ });
+	else {
+		if (value_type_.is_ref()) {
+			if (rhs->value_type_.is_const() && !value_type_.is_const())
+				throw runtime_error("ClBinaryOpNode:: Assign error, const value cannot assign to none const reference!");
+			if (rhs->value_type_.is_rvalue())
+				throw runtime_error("ClBinaryOpNode:: Assign error, cannot assign rvalue to reference!");
+			code_->Add({ TokenTypeToCmd(token_type), rhs->GetValueAddress(), kEmptyCmdArg, GetValueAddress() });
+		}
+		else
+			code_->Add({ TokenTypeToCmd(token_type), rhs->GetValue(), kEmptyCmdArg, GetValue() });
+	}
 
 	children_.emplace_back(move(lhs));
 	children_.emplace_back(move(rhs));
@@ -130,11 +139,11 @@ ClUnaryOpNode::ClUnaryOpNode(ClAstPtr && lhs, TokenType token_type, SymbolTable 
 	if (lhs->value_type_.IsPrimeType()) {
 		node_type_ = TokenTypeToCmd(token_type);
 		SymbolNode* tmp_node = symbol_table.PutTemp(lhs->value_type_.prime_type());
-		value_ = tmp_node->name();
+		set_value(kAddress, tmp_node->name());
 		value_type_ = tmp_node->type_;
 		value_type_.set_is_rvalue(true);
 		code_.reset(new ClCodeBlock(lhs->code_));
-		code_->Add({ TokenTypeToCmd(token_type), lhs->value_, kEmptyCmdArg, value_ });
+		code_->Add({ TokenTypeToCmd(token_type), lhs->GetValue(), kEmptyCmdArg, GetValue() });
 		children_.emplace_back(move(lhs));
 	}
 	else
@@ -149,16 +158,16 @@ ClIncreDecreOpNode::ClIncreDecreOpNode(ClAstPtr&& lhs, TokenType token_type, boo
 
 	SymbolNode *tmp_node = symbol_table.PutTemp(lhs->value_type_.prime_type());
 	code_.reset(new ClCodeBlock(lhs->code_));
-	value_ = tmp_node->name();
+	set_value(kAddress, tmp_node->name());
 	string op = token_type == OP_INCREMENT ? TokenTypeToCmd(OP_ADD) : TokenTypeToCmd(OP_MINUS);
 	node_type_ = TokenTypeToCmd(token_type) + (is_suffix ? "_suffix" : "_prefix");
 	if (is_suffix) {
-		code_->Add({ TokenTypeToCmd(OP_ASSIGN), lhs->value_, kEmptyCmdArg, value_ });
-		code_->Add({ op, lhs->value_, "1", lhs->value_ });
+		code_->Add({ TokenTypeToCmd(OP_ASSIGN), lhs->GetValue(), kEmptyCmdArg, GetValue() });
+		code_->Add({ op, lhs->GetValue(), "1", lhs->GetValue() });
 	}
 	else {
-		code_->Add({ op, lhs->value_, "1", lhs->value_ });
-		code_->Add({ TokenTypeToCmd(OP_ASSIGN), lhs->value_, kEmptyCmdArg, value_ });
+		code_->Add({ op, lhs->GetValue(), "1", lhs->GetValue() });
+		code_->Add({ TokenTypeToCmd(OP_ASSIGN), lhs->GetValue(), kEmptyCmdArg, GetValue() });
 	}
 }
 
@@ -167,9 +176,9 @@ ClTypeConvertNode::ClTypeConvertNode(ClAstPtr&& lhs, VariableType::PrimeType tar
 	if (lhs->value_type_.IsPrimeType() && value_type_.IsPrimeType()) {
 		node_type_ = "TypeConvert";
 		SymbolNode* symbol = symbol_table.PutTemp(target_type);
-		value_ = symbol->name();
+		set_value(kAddress, symbol->name());
 		code_.reset(new ClCodeBlock(lhs->code_));
-		code_->Add({ TokenTypeToCmd(TokenType::OP_ASSIGN), lhs->value_, kEmptyCmdArg, value_ });
+		code_->Add({ TokenTypeToCmd(TokenType::OP_ASSIGN), lhs->GetValue(), kEmptyCmdArg, GetValue() });
 		children_.emplace_back(move(lhs));
 	}
 	else
@@ -190,30 +199,42 @@ ClAstPtr ClDeclNode::ParseDecl1(Lexer & lexer, VariableType::PrimeType type, Sym
 		string identifier = lexer.ToNext().value_;
 		return ParseDecl2(lexer, identifier, type, symbol_table);
 	}
+	else if (lexer.Current().type_ == TokenType::OP_LOGICAL_AND) {
+		lexer.ToNext();
+		string id = lexer.ToNext().value_;
+		VariableType variable_type(type, true);
+		SymbolNode symbol(id, SymbolNode::kVariable, variable_type, symbol_table.Alloc(variable_type.width().front()));
+		symbol_table.Put(symbol);
+		ClAstPtr ret_ptr(new ClDeclNode(type));
+		ret_ptr->set_value(kReference, symbol.name());
+		return ret_ptr;
+	}
 	throw runtime_error("ClDeclNode:: Decl must has identifier!");
 	return nullptr;
 }
 
 ClAstPtr ClDeclNode::ParseDecl2(Lexer & lexer, const std::string& id, VariableType::PrimeType type, SymbolTable & symbol_table) {
-	/*if (lexer.Current().type_ == OP_LEFT_BRACKET) {
+	if (lexer.Current().type_ == OP_LEFT_BRACKET) {
 		lexer.ToNext();
 		lexer.Consume(OP_RIGHT_BRACKET);
+		ClAstPtr ret_ptr = ParseArray(lexer, type, symbol_table);
+		ret_ptr->value_type_.set_is_ref(true);
+		ret_ptr->value_type_.InsertDim(-1);
+		int64_t width = ret_ptr->value_type_.width().front();
+		SymbolNode symbol(id, SymbolNode::kVariable, ret_ptr->value_type_, symbol_table.Alloc(width));
+		symbol_table.Put(symbol);
+		ret_ptr->set_value(kReference, symbol.name());
+		return ret_ptr;
+	}
+	else {
 		ClAstPtr ret_ptr = ParseArray(lexer, type, symbol_table);
 		int64_t width = ret_ptr->value_type_.width().front();
 		SymbolNode symbol(id, SymbolNode::kVariable, ret_ptr->value_type_, symbol_table.Alloc(width));
 		symbol_table.Put(symbol);
-		ret_ptr->value_ = symbol.name();
+		ret_ptr->set_value(kAddress, symbol.name());
 		return ret_ptr;
-		}
-		else */{
-			ClAstPtr ret_ptr = ParseArray(lexer, type, symbol_table);
-			int64_t width = ret_ptr->value_type_.width().front();
-			SymbolNode symbol(id, SymbolNode::kVariable, ret_ptr->value_type_, symbol_table.Alloc(width));
-			symbol_table.Put(symbol);
-			ret_ptr->value_ = symbol.name();
-			return ret_ptr;
 	}
-return nullptr;
+	return nullptr;
 }
 
 ClAstPtr ClDeclNode::ParseArray(Lexer & lexer, VariableType::PrimeType type, SymbolTable & symbol_table) {
@@ -250,7 +271,7 @@ ClExprNode::ClExprNode(Lexer & lexer, SymbolTable & symbol_table) {
 	ClAstPtr expr = Parse(lexer, symbol_table);
 	node_type_ = "ExprNode";
 	code_.reset(new ClCodeBlock(expr->code_));
-	value_ = expr->value_;
+	set_value(expr->store_type(), expr->value());
 	value_type_ = expr->value_type_;
 	children_.emplace_back(move(expr));
 }
@@ -485,18 +506,30 @@ ClAstPtr ClExprNode::ParseIdValue(Lexer& lexer, SymbolTable& symbol_table) {
 		if (symbol == nullptr)
 			throw runtime_error("ClIdNode:: id not exists: " + id);
 		ClAstPtr id_node(new ClAstNode);
+		ClCodeLine code;
 		if (lexer.Current().type_ == OP_LEFT_BRACKET) {
 			id_node->node_type_ = "Array";
-			SymbolNode* tmp_symbol = symbol_table.PutTemp(VariableType::kPointer);
-			ClCodeLine code = { TokenTypeToCmd(OP_ASSIGN), kLiteralValueIndicator + symbol->name(), kEmptyCmdArg, tmp_symbol->name() };
+			VariableType tmp_variable_type = symbol->type_;
+			SymbolNode* tmp_symbol;
+			if (tmp_variable_type.is_ref()) {
+				tmp_symbol = symbol_table.PutTemp(tmp_variable_type);
+				code = { TokenTypeToCmd(OP_ASSIGN), symbol->name(), kEmptyCmdArg, tmp_symbol->name() };
+			}
+			else {
+				tmp_variable_type.RemoveDim();
+				tmp_variable_type.set_is_ref(true);
+				tmp_symbol = symbol_table.PutTemp(tmp_variable_type);
+				code = { TokenTypeToCmd(OP_ASSIGN), symbol->GetAddress(), kEmptyCmdArg, tmp_symbol->name() };
+			}
 			id_node->code_.reset(new ClCodeBlock(code));
-			id_node->value_ = tmp_symbol->name();
+			id_node->set_value(kReference, tmp_symbol->name());
 			id_node->value_type_ = tmp_symbol->type_;
+			
 			return ParseIdValue1(lexer, move(id_node), symbol_table);
 		}
 		else {
 			id_node->node_type_ = "Id";
-			id_node->value_ = symbol->name();
+			id_node->set_value(kAddress, symbol->name());
 			id_node->value_type_ = symbol->type_;
 			return move(id_node);
 		}
@@ -507,6 +540,10 @@ ClAstPtr ClExprNode::ParseIdValue(Lexer& lexer, SymbolTable& symbol_table) {
 ClAstPtr ClExprNode::ParseIdValue1(Lexer& lexer, ClAstPtr&& inherit, SymbolTable& symbol_table) {
 	if (lexer.Current().type_ == OP_LEFT_BRACKET) {
 		ClAstPtr expr(new ClExprNode(lexer, symbol_table));
+		VariableType tmp_variable_type = inherit->value_type_;
+		if (!tmp_variable_type.RemoveDim())
+			throw runtime_error("ClExprNode::ParseIdValue1 array dim overflow");
+		SymbolNode* tmp_symbol = symbol_table.PutTemp(tmp_variable_type);
 		
 	}
 	return move(inherit);
@@ -551,6 +588,29 @@ ClAstPtr ClParser::ParseStmt1() {
 	ClAstPtr ret_ptr(new ClExprNode(lexer_, symbol_table_));
 	lexer_.Consume(TokenType::OP_SEMICOLON);
 	return ret_ptr;
+}
+
+void ClAstNode::set_value(StoreType store_type, const std::string & value) {
+	store_type_ = store_type;
+	value_ = value;
+}
+
+std::string ClAstNode::GetValueAddress() const {
+	if (store_type_ == kLiteralValue)
+		return "-1";
+	else if (store_type_ == kAddress)
+		return kLiteralValueIndicator + value_;
+	else// if (store_type_ == kReference)
+		return value_;
+}
+
+std::string ClAstNode::GetValue() const {
+	if (store_type_ == kLiteralValue)
+		return kLiteralValueIndicator + value_;
+	else if (store_type_ == kAddress)
+		return value_;
+	else// if (store_type_ == kReference)
+		return kDereferenceValueIndicator + value_;
 }
 
 } // namespace pswgoo
