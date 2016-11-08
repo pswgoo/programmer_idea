@@ -1,0 +1,7 @@
+1. language support : 
+a. 支持函数，数组，引用
+b. 
+
+
+2. 
+

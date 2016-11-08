@@ -99,7 +99,7 @@ struct SymbolNode {
 		id_(id), category_(category), type_(type), address_(address) {
 	};
 
-	std::string name() const { return id_; }
+	std::string name() const { /*return id_;*/ return '[' + std::to_string(address_) + ']'; }
 	std::string GetAddress() const { return '&' + name(); }
 
 	std::string id_;
