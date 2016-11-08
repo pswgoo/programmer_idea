@@ -5,6 +5,8 @@ set (SRCS
 	symbol_table.h
 	cl_parser.cpp
 	cl_parser.h
+	parser.cpp
+	parser.h
 )
 
 add_source_groups(${SRCS})
