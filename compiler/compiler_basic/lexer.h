@@ -3,6 +3,7 @@
 #include <vector>
 #include <string>
 #include <unordered_map>
+#include <cassert>
 
 namespace pswgoo {
 
@@ -57,7 +58,10 @@ public:
 	int Tokenize(const std::string &sequence);
 	const Token& Current() const;
 	const Token& LookNext() const;
+	// @return next token, and cursor_ += 1;
 	const Token& ToNext();
+	// @return current token first, then cursor_ += 1;
+	const Token& GoNext();
 	bool Consume(TokenType token) {
 		if (Current().type_ != token) {
 			return false;

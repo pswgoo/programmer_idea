@@ -270,11 +270,16 @@ const Lexer::Token& Lexer::LookNext() const {
 		return tokens_[cursor_ + 1];
 }
 
-const Lexer::Token& Lexer::ToNext() {
+const Lexer::Token& Lexer::GoNext() {
 	if (cursor_ >= tokens_.size())
 		return kNonToken_;
-	else 
+	else
 		return tokens_[cursor_++];
+}
+
+const Lexer::Token& Lexer::ToNext() {
+	GoNext();
+	return Current();
 }
 
 } // namespace pswgoo

@@ -187,7 +187,7 @@ private:
 		switch (lexer_.Current().type_)
 		{
 		case TokenType::INTEGER:
-			return unique_ptr<NumberNode>(new NumberNode(lexer_.ToNext().value_));
+			return unique_ptr<NumberNode>(new NumberNode(lexer_.GoNext().value_));
 		case TokenType::OP_LEFT_PARENTHESIS:{
 			lexer_.ToNext();
 			unique_ptr<AstNode> left = ParseE();
