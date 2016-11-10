@@ -47,6 +47,13 @@ public:
 	const Type* type_;
 };
 
+class ImmediateSymbol : public ConstSymbol {
+public:
+	ImmediateSymbol(const std::string& name, const Type* type, const std::string& value) : ConstSymbol(name, type), value_(value) {}
+	const Type* type_;
+	std::string value_;
+};
+
 class FunctionSymbol : public ConstSymbol {
 public:
 	FunctionSymbol(const std::string& name, AstNodePtr&& body, ScopePtr&& scope, const Type* type) : ConstSymbol(name, type), body_(std::move(body)), scope_(std::move(scope)) {}
@@ -81,53 +88,61 @@ class Type : public Symbol {
 public:
 	enum TypeId {kNon, kBool, kChar, kInt, kLong, kFloat, kDouble, kPrimitiveType, kArray, kReference, kFunction, kClass};
 	Type(TypeId type_id) : type_id_(type_id) {}
-	Type(const std::string& name, TypeId type_id) : Symbol(name), type_id_(type_id) {}
+	Type(const std::string& name, TypeId type_id, Scope* parent_scope) : Symbol(name), type_id_(type_id), parent_scope_(parent_scope) {}
 
 	// @return type size in bytes
 	virtual int64_t SizeOf() const = 0;
+	virtual bool CouldPromoteTo(const Type* target_type) const {
+		if (target_type->type_id_ < kPrimitiveType && type_id_ == target_type->type_id_)
+			return true;
+		if (target_type->type_id_ < kPrimitiveType && type_id_ >= kChar && type_id_ <= target_type->type_id_)
+			return true;
+		return false;
+	};
 
 	TypeId type_id_;
+	Scope* parent_scope_;
 };
 
 class Bool : public Type {
 public:
-	Bool() : Type("bool", kBool) {}
+	Bool(Scope* parent_scope) : Type("bool", kBool, parent_scope) {}
 	virtual int64_t SizeOf() const override { return 1; }
 };
 
 class Char : public Type {
 public:
-	Char() : Type("char", kChar) {}
+	Char(Scope* parent_scope) : Type("char", kChar, parent_scope) {}
 	virtual int64_t SizeOf() const override { return 1; }
 };
 
 class Int : public Type {
 public:
-	Int() : Type("int", kInt) {}
+	Int(Scope* parent_scope) : Type("int", kInt, parent_scope) {}
 	virtual int64_t SizeOf() const override { return 4; }
 };
 
 class Long : public Type {
 public:
-	Long() : Type("long", kLong) {}
+	Long(Scope* parent_scope) : Type("long", kLong, parent_scope) {}
 	virtual int64_t SizeOf() const override { return 8; }
 };
 
 class Float : public Type {
 public:
-	Float() : Type("float", kFloat) { }
+	Float(Scope* parent_scope) : Type("float", kFloat, parent_scope) { }
 	virtual int64_t SizeOf() const override { return 4; }
 };
 
 class Double : public Type {
 public:
-	Double() : Type("double", kDouble) {}
+	Double(Scope* parent_scope) : Type("double", kDouble, parent_scope) {}
 	virtual int64_t SizeOf() const override { return 8; }
 };
 
 class Array : public Type {
 public:
-	Array(const Type* type, int64_t length) : Type(std::to_string(length) + "_" + type->name(), kArray), element_type_(type), length_(length) {}
+	Array(const Type* type, int64_t length, Scope* parent_scope) : Type(std::to_string(length) + "_" + type->name(), kArray, parent_scope), element_type_(type), length_(length) {}
 
 	virtual int64_t SizeOf() const override { return element_type_->SizeOf() * length_; }
 
@@ -238,25 +253,37 @@ class Compiler {
 public:
 	Compiler(): global_scope_(new Scope){
 		// put primitive types to global scope
-		global_scope_->Put(std::unique_ptr<Bool>(new Bool));
-		global_scope_->Put(std::unique_ptr<Char>(new Char));
-		global_scope_->Put(std::unique_ptr<Int>(new Int));
-		global_scope_->Put(std::unique_ptr<Long>(new Long));
-		global_scope_->Put(std::unique_ptr<Float>(new Float));
-		global_scope_->Put(std::unique_ptr<Double>(new Double));
+		global_scope_->Put(std::unique_ptr<Bool>(new Bool(global_scope_.get())));
+		global_scope_->Put(std::unique_ptr<Char>(new Char(global_scope_.get())));
+		global_scope_->Put(std::unique_ptr<Int>(new Int(global_scope_.get())));
+		global_scope_->Put(std::unique_ptr<Long>(new Long(global_scope_.get())));
+		global_scope_->Put(std::unique_ptr<Float>(new Float(global_scope_.get())));
+		global_scope_->Put(std::unique_ptr<Double>(new Double(global_scope_.get())));
 		current_scope_ = global_scope_.get();
 	}
 
 	void Parse(const std::string& program);
 
 private:
+	bool CurrentIsType() const {
+		if (lexer_.Current().type_ == IDENTIFIER) {
+			const Symbol* sym = current_scope_->Get(lexer_.Current().value_);
+			if (sym != nullptr && sym->Is<Type>())
+				return true;
+		}
+	}
+
 	StmtNodePtr Parse();
 
 	StmtNodePtr ParseFuncDef1(const Type* type, const std::string &name);
 
+	StmtNodePtr ParseStmt();
+
 	VariableSymbol ParseDecl();
 
-	StmtNodePtr ParseStmt();
+	ExprNodePtr ParseExpr();
+
+	int64_t ParseConstInt();
 
 private:
 	Lexer lexer_;

@@ -12,6 +12,7 @@ Stmt1 -> Expr; | ConstDef; | return Expr; | return;
 	 -> if (Expr) Stmt else Stmt
 	 -> while (Expr) LoopStmt
 	 -> switch (Expr) { Case }
+	 -> ;
 
 Stmts -> Stmt Stmts | epsilon
 
