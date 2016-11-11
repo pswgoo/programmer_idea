@@ -94,12 +94,19 @@ VariableSymbol Compiler::ParseDecl() {
 			dims.push_back(ParseConstInt());
 			lexer_.Consume(OP_RIGHT_BRACKET);
 		}
-		for (int)
+		for (int i = (int)dims.size() - 1; i >= 0; --i) {
+			TypePtr array_type(unique_ptr<Array>(new Array(type, dims[i], type->parent_scope_)));
+			type = dynamic_cast<const Type*>(type->parent_scope_->Put(move(array_type)));
+		}
+		if (const Symbol* sym = current_scope_->GetCurrent(var))
+			if (const VariableSymbol* ptr_var = dynamic_cast<const VariableSymbol*>(sym))
+				assert(ptr_var->type_ == type && "Declare not consistence!");	
+		current_scope_->Put(unique_ptr<VariableSymbol>(new VariableSymbol(var, type)));
 	}
 	else// if (lexer_.Current().type_ == OP_LOGICAL_AND)
 		assert(0 && "Declare reference not implement!");
 
-	return VariableSymbol();
+	return VariableSymbol("", nullptr);
 }
 
 ExprNodePtr Compiler::ParseExpr() {

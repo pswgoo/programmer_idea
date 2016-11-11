@@ -18,14 +18,15 @@ public:
 	Symbol() = default;
 	Symbol(const std::string& name) : name_(name) {}
 
-	std::string name()const { return name_; }
-
-	virtual void V() {};
+	const std::string& name()const { return name_; }
 
 	template<typename T>
 	bool Is() const {
 		return dynamic_cast<const T*>(this) != nullptr;
 	}
+
+protected:
+	virtual void V() {};
 
 	std::string name_;
 };
@@ -38,6 +39,7 @@ typedef std::unique_ptr<Scope> ScopePtr;
 
 class VariableSymbol : public Symbol {
 public:
+	VariableSymbol(const std::string& name, const Type* type) : Symbol(name), type_(type) {}
 	const Type* type_;
 };
 
@@ -66,15 +68,25 @@ class Scope {
 public:
 	Scope(const Scope* parent_ptr = nullptr) : parent_(parent_ptr) {}
 
-	const Symbol* Get(const std::string& name) const {
+	const Symbol* GetCurrent(const std::string& name) const {
 		std::unordered_map<std::string, SymbolPtr>::const_iterator fid = symbol_table_.find(name);
 		if (symbol_table_.end() != fid)
 			return fid->second.get();
 		return nullptr;
 	}
+	const Symbol* Get(const std::string& name) const {
+		const Scope* ptr = this;
+		while (ptr != nullptr) {
+			if (const Symbol* ret_ptr = ptr->GetCurrent(name))
+				return ret_ptr;
+			ptr = ptr->parent_;
+		}
+		return nullptr;
+	}
 	const Symbol* Put(SymbolPtr&& symbol_ptr) {
-		SymbolPtr& ptr = symbol_table_[symbol_ptr->name_];
-		ptr = std::move(symbol_ptr);
+		SymbolPtr& ptr = symbol_table_[symbol_ptr->name()];
+		if (!ptr)
+			ptr = std::move(symbol_ptr);
 		return ptr.get();
 	}
 	const Scope* parent() const {	return parent_; }
@@ -271,6 +283,7 @@ private:
 			if (sym != nullptr && sym->Is<Type>())
 				return true;
 		}
+		return false;
 	}
 
 	StmtNodePtr Parse();
