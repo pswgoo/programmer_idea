@@ -35,7 +35,7 @@ StmtNodePtr Compiler::ParseFuncDef1(const Type* type, const std::string &name) {
 	vector<VariableSymbol> params;
 	while (true) {
 		params.emplace_back(ParseDecl());
-		if (lexer_.Current().type_ == OP_COMMON)
+		if (lexer_.Current().type_ == OP_COMMA)
 			lexer_.ToNext();
 		else if (lexer_.Current().type_ == OP_RIGHT_PARENTHESIS) {
 			lexer_.ToNext();
@@ -299,7 +299,7 @@ ExprNodePtr Compiler::ParseE11() {
 	}
 	else if (cur_type == IDENTIFIER) {
 		const Symbol* symbol = current_scope_->Get(lexer_.Current().value_);
-		assert(symbol && lexer_.Current().value_ + " not defined");
+		assert(symbol && (lexer_.Current().value_ + " not defined").c_str());
 		if (const ImmediateSymbol* immediate = dynamic_cast<const ImmediateSymbol*>(symbol))
 			return ExprNodePtr(new ImmediateNode(IDENTIFIER, immediate->type_, immediate->value_));
 		else if (const VariableSymbol* var = dynamic_cast<const VariableSymbol*>(symbol))
@@ -313,9 +313,32 @@ ExprNodePtr Compiler::ParseE11() {
 	throw runtime_error("ClExprNode:: Parse11 error!");
 	return nullptr;
 }
+
 CallNodePtr Compiler::ParseCall() {
-	return nullptr;
+	string func_name = lexer_.GoNext().value_;
+	const FunctionSymbol* func_symbol = dynamic_cast<const FunctionSymbol*>(current_scope_->Get(func_name));
+	assert(func_symbol && (func_name + " is not a function symbol").c_str());
+	lexer_.Consume(OP_LEFT_PARENTHESIS);
+	vector<ExprNodePtr> params;
+	while (lexer_.Current().type_ != OP_RIGHT_PARENTHESIS) {
+		params.emplace_back(ParseExpr());
+		if (lexer_.Current().type_ == OP_COMMA)
+			lexer_.Consume(OP_COMMA);
+		else if (lexer_.Current().type_ != OP_RIGHT_PARENTHESIS)
+			assert(0 && "Invalid function paramater list");
+	}
+	lexer_.Consume(OP_RIGHT_PARENTHESIS);
+	const Function* func_type = dynamic_cast<const Function*>(func_symbol->type_);
+	bool param_match = params.size() == func_type->params_.size();
+	if (param_match)
+		for (int i = 0; i < params.size(); ++i)
+			if (!(params[i]->type_->CouldPromoteTo(func_type->params_[i].type_))) {
+				param_match = false;
+				assert(0 && "Function paramater not compatible!");
+			}
+	return CallNodePtr(new CallNode(NT_CALL, func_type->ret_type_, func_name, move(params)));
 }
+
 ImmediateNodePtr Compiler::ParseLiteralValue() {
 	TokenType type = lexer_.Current().type_;
 	switch (type) {

@@ -107,8 +107,8 @@ public:
 		if (type1->CouldPromoteTo(type2))
 			return type2;
 		else if (type2->CouldPromoteTo(type1))
-			return type2;
-		assert(!need_assert && type1->name() + " and " + type2->name() + " not compatible");
+			return type1;
+		assert(!need_assert && (type1->name() + " and " + type2->name() + " not compatible").c_str());
 		return nullptr;
 	}
 
@@ -188,7 +188,6 @@ public:
 
 	virtual int64_t SizeOf() const override { return 8; }
 
-private:
 	const Type* ret_type_;
 	std::vector<VariableSymbol> params_;
 };
@@ -348,9 +347,7 @@ private:
 	ExprNodePtr ParseE9();
 	ExprNodePtr ParseE9R(ExprNodePtr &&inherit);
 	ExprNodePtr ParseE10();
-	ExprNodePtr ParseE10R(ExprNodePtr &&inherit);
 	ExprNodePtr ParseE11();
-	ExprNodePtr ParseE11R(ExprNodePtr &&inherit);
 	CallNodePtr ParseCall();
 	ImmediateNodePtr ParseLiteralValue();
 
