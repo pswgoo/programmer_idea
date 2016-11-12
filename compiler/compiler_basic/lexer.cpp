@@ -13,10 +13,9 @@ const Lexer::Token Lexer::kNonToken_ = Lexer::Token();
 const unordered_map<string, TokenType> Lexer::kKeyWords = {
 	{ "if", KEY_IF }, { "else", KEY_ELSE }, { "while", KEY_WHILE }, { "for", KEY_FOR }, { "switch", KEY_SWITCH },
 	{ "case", KEY_CASE }, { "struct", KEY_STRUCT }, { "class", KEY_CLASS }, { "const", KEY_CONST }, { "do", KEY_DO },
-	{ "goto", KEY_GOTO }, { "bool", KEY_BOOL }, { "char", KEY_CHAR}, { "int", KEY_INT }, { "float", KEY_FLOAT }, 
-	{ "double", KEY_DOUBLE }, { "null", KEY_NULL }, { "break", KEY_BREAK },
+	{ "goto", KEY_GOTO }, { "break", KEY_BREAK },
 	{ "continue", KEY_CONTINUE }, { "default", KEY_DEFAULT }, { "return", KEY_RETURN }, { "void", KEY_VOID },
-	{ "true", BOOLEAN }, { "false", BOOLEAN },
+	{ "true", BOOLEAN }, { "false", BOOLEAN }, {"null", NULL_REF},
 };
 
 const unordered_map<string, TokenType> Lexer::kOperators = { 

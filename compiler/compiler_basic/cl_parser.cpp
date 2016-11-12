@@ -23,11 +23,11 @@ void ClCodeBlock::Print(std::ostream& os) const {
 
 bool IsPrimeType(TokenType token_type) {
 	switch (token_type) {
-	case TokenType::KEY_BOOL:
-	case TokenType::KEY_CHAR:
-	case TokenType::KEY_INT:
-	case TokenType::KEY_FLOAT:
-	case TokenType::KEY_DOUBLE:
+	//case TokenType::KEY_BOOL:
+	//case TokenType::KEY_CHAR:
+	//case TokenType::KEY_INT:
+	//case TokenType::KEY_FLOAT:
+	//case TokenType::KEY_DOUBLE:
 		return true;
 	default:
 		return false;

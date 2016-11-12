@@ -49,6 +49,7 @@ public:
 	const Type* type_;
 };
 
+// ImmediateSymbol must know value in compiling time.
 class ImmediateSymbol : public ConstSymbol {
 public:
 	ImmediateSymbol(const std::string& name, const Type* type, const std::string& value) : ConstSymbol(name, type), value_(value) {}
@@ -101,6 +102,15 @@ public:
 	enum TypeId {kNon, kBool, kChar, kInt, kLong, kFloat, kDouble, kPrimitiveType, kArray, kReference, kFunction, kClass};
 	Type(TypeId type_id) : type_id_(type_id) {}
 	Type(const std::string& name, TypeId type_id, Scope* parent_scope) : Symbol(name), type_id_(type_id), parent_scope_(parent_scope) {}
+
+	static const Type* Max(const Type* type1, const Type* type2, bool need_assert = false) {
+		if (type1->CouldPromoteTo(type2))
+			return type2;
+		else if (type2->CouldPromoteTo(type1))
+			return type2;
+		assert(!need_assert && type1->name() + " and " + type2->name() + " not compatible");
+		return nullptr;
+	}
 
 	// @return type size in bytes
 	virtual int64_t SizeOf() const = 0;
@@ -188,54 +198,73 @@ class Class : public Type {
 };
 
 struct AstNode {
+	AstNode(TokenType token_type = NOT_DEFINED) : token_type_(token_type) {}
+	template<typename T>
+	bool Is() const {
+		return dynamic_cast<const T*>(this) != nullptr;
+	}
+
 	TokenType token_type_;
+
+protected:
+	virtual void V() {};
 };
 
 struct StmtNode : public AstNode {
-
+	StmtNode(TokenType token_type = NOT_DEFINED) : AstNode(token_type) {}
 };
 typedef std::unique_ptr<StmtNode> StmtNodePtr;
 
 struct ExprNode : public StmtNode {
-	TypePtr type_;
+	ExprNode(TokenType token_type, const Type* type) : StmtNode(token_type), type_(type) {}
+	const Type* type_;
 };
 typedef std::unique_ptr<ExprNode> ExprNodePtr;
 
 struct ImmediateNode : public ExprNode {
+	ImmediateNode(TokenType token_type, const Type* type, const std::string& value) : ExprNode(token_type, type), value_(value) {}
 	std::string value_;
 };
+typedef std::unique_ptr<ImmediateNode> ImmediateNodePtr;
 
 struct VariableNode : public ExprNode {
-	std::string name_;
-	Scope* scope_;
+	VariableNode(TokenType token_type, const Type* type, const std::string& var_name) : ExprNode(token_type, type), var_name_(var_name) {}
+	std::string var_name_;
 };
+typedef std::unique_ptr<VariableNode> VariableNodePtr;
 
 struct AssignNode : public ExprNode {
-	ExprNodePtr expr_;
+	AssignNode(TokenType token_type, const Type* type, VariableNodePtr&& left_var, ExprNodePtr&& right_expr) : ExprNode(token_type, type), left_var_(std::move(left_var)), right_expr_(std::move(right_expr)) {}
+	VariableNodePtr left_var_;
+	ExprNodePtr right_expr_;
 };
 
 struct BinaryOpNode : public ExprNode {
+	BinaryOpNode(TokenType token_type, const Type* type, ExprNodePtr&& left_expr, ExprNodePtr&& right_expr) : ExprNode(token_type, type), left_expr_(std::move(left_expr)), right_expr_(std::move(right_expr)) {}
 	ExprNodePtr left_expr_;
 	ExprNodePtr right_expr_;
 };
 
 struct UnaryOpNode : public ExprNode {
+	UnaryOpNode(TokenType token_type, const Type* type, ExprNodePtr&& expr) : ExprNode(token_type, type), expr_(std::move(expr)) {}
 	ExprNodePtr expr_;
 };
-
 struct ArrayNode : public ExprNode {
+	ArrayNode(TokenType token_type, const Type* type, ExprNodePtr&& base, ExprNodePtr&& index) : ExprNode(token_type, type), base_(std::move(base)), index_(std::move(index)) {}
 	ExprNodePtr base_;  // array base address
 	ExprNodePtr index_;  // array index
 };
 
 struct CallNode : public ExprNode {
+	CallNode(TokenType token_type, const Type* type, const std::string& func_name, std::vector<ExprNodePtr>&& params) : ExprNode(token_type, type), func_name_(func_name), params_(std::move(params)) {}
 	std::string func_name_;
 	std::vector<ExprNodePtr> params_;
-	Scope* scope_;
 };
+typedef std::unique_ptr<CallNode> CallNodePtr;
 
-struct DefNode : public StmtNode {
-	std::string name_;
+struct DefNode : public ExprNode {
+	DefNode(TokenType token_type, const Type* type, const std::string& var_name, ExprNodePtr&& expr) : ExprNode(token_type, type), var_name_(var_name), expr_(std::move(expr)) {}
+	std::string var_name_;
 	ExprNodePtr expr_;
 };
 
@@ -297,6 +326,37 @@ private:
 	ExprNodePtr ParseExpr();
 
 	int64_t ParseConstInt();
+
+private:
+	ExprNodePtr ParseER(ExprNodePtr &&inherit);
+	ExprNodePtr ParseE1();
+	ExprNodePtr ParseE1R(ExprNodePtr &&inherit);
+	ExprNodePtr ParseE2();
+	ExprNodePtr ParseE2R(ExprNodePtr &&inherit);
+	ExprNodePtr ParseE3();
+	ExprNodePtr ParseE3R(ExprNodePtr &&inherit);
+	ExprNodePtr ParseE4();
+	ExprNodePtr ParseE4R(ExprNodePtr &&inherit);
+	ExprNodePtr ParseE5();
+	ExprNodePtr ParseE5R(ExprNodePtr &&inherit);
+	ExprNodePtr ParseE6();
+	ExprNodePtr ParseE6R(ExprNodePtr &&inherit);
+	ExprNodePtr ParseE7();
+	ExprNodePtr ParseE7R(ExprNodePtr &&inherit);
+	ExprNodePtr ParseE8();
+	ExprNodePtr ParseE8R(ExprNodePtr &&inherit);
+	ExprNodePtr ParseE9();
+	ExprNodePtr ParseE9R(ExprNodePtr &&inherit);
+	ExprNodePtr ParseE10();
+	ExprNodePtr ParseE10R(ExprNodePtr &&inherit);
+	ExprNodePtr ParseE11();
+	ExprNodePtr ParseE11R(ExprNodePtr &&inherit);
+	CallNodePtr ParseCall();
+	ImmediateNodePtr ParseLiteralValue();
+
+	const Type* GetType(const std::string& type_name) {
+		return dynamic_cast<const Type*>(current_scope_->Get(type_name));
+	}
 
 private:
 	Lexer lexer_;
