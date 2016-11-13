@@ -227,14 +227,15 @@ struct ImmediateNode : public ExprNode {
 typedef std::unique_ptr<ImmediateNode> ImmediateNodePtr;
 
 struct VariableNode : public ExprNode {
-	VariableNode(TokenType token_type, const Type* type, const std::string& var_name) : ExprNode(token_type, type), var_name_(var_name) {}
+	VariableNode(TokenType token_type, const Type* type, const std::string& var_name, ExprNodePtr&& expr) : ExprNode(token_type, type), var_name_(var_name), expr_(std::move(expr)) {}
 	std::string var_name_;
+	ExprNodePtr expr_;
 };
 typedef std::unique_ptr<VariableNode> VariableNodePtr;
 
 struct AssignNode : public ExprNode {
-	AssignNode(TokenType token_type, const Type* type, VariableNodePtr&& left_var, ExprNodePtr&& right_expr) : ExprNode(token_type, type), left_var_(std::move(left_var)), right_expr_(std::move(right_expr)) {}
-	VariableNodePtr left_var_;
+	AssignNode(TokenType token_type, const Type* type, ExprNodePtr&& left_var, ExprNodePtr&& right_expr) : ExprNode(token_type, type), left_var_(std::move(left_var)), right_expr_(std::move(right_expr)) {}
+	ExprNodePtr left_var_;
 	ExprNodePtr right_expr_;
 };
 
@@ -253,6 +254,7 @@ struct ArrayNode : public ExprNode {
 	ExprNodePtr base_;  // array base address
 	ExprNodePtr index_;  // array index
 };
+typedef std::unique_ptr<ArrayNode> ArrayNodePtr;
 
 struct CallNode : public ExprNode {
 	CallNode(TokenType token_type, const Type* type, const std::string& func_name, std::vector<ExprNodePtr>&& params) : ExprNode(token_type, type), func_name_(func_name), params_(std::move(params)) {}
@@ -350,6 +352,8 @@ private:
 	ExprNodePtr ParseE11();
 	CallNodePtr ParseCall();
 	ImmediateNodePtr ParseLiteralValue();
+	ExprNodePtr ParseArray(ExprNodePtr &&inherit);
+	
 
 	const Type* GetType(const std::string& type_name) {
 		return dynamic_cast<const Type*>(current_scope_->Get(type_name));

@@ -124,9 +124,7 @@ ExprNodePtr Compiler::ParseER(ExprNodePtr &&inherit) {
 		lexer_.ToNext();
 		ExprNodePtr ptr_expr = ParseE1();
 		ExprNodePtr ptr_expr_r = ParseER(move(ptr_expr));
-		assert(inherit->Is<VariableNode>() && "Assign node's left operand must be VariableNode!");
-		VariableNodePtr var_ptr(dynamic_cast<VariableNode*>(inherit.release()));
-		return ExprNodePtr(new AssignNode(op_type, var_ptr->type_, move(var_ptr), move(ptr_expr_r)));
+		return ExprNodePtr(new AssignNode(op_type, inherit->type_, move(inherit), move(ptr_expr_r)));
 	}
 	default:
 		break;
@@ -300,10 +298,14 @@ ExprNodePtr Compiler::ParseE11() {
 	else if (cur_type == IDENTIFIER) {
 		const Symbol* symbol = current_scope_->Get(lexer_.Current().value_);
 		assert(symbol && (lexer_.Current().value_ + " not defined").c_str());
-		if (const ImmediateSymbol* immediate = dynamic_cast<const ImmediateSymbol*>(symbol))
+		if (const ImmediateSymbol* immediate = dynamic_cast<const ImmediateSymbol*>(symbol)) {
+			lexer_.ToNext();
 			return ExprNodePtr(new ImmediateNode(IDENTIFIER, immediate->type_, immediate->value_));
-		else if (const VariableSymbol* var = dynamic_cast<const VariableSymbol*>(symbol))
-			return ExprNodePtr(new VariableNode(IDENTIFIER, var->type_, var->name()));
+		}
+		else if (const VariableSymbol* var = dynamic_cast<const VariableSymbol*>(symbol)) {
+			lexer_.ToNext();
+			return ParseArray(ExprNodePtr(new VariableNode(IDENTIFIER, var->type_, var->name(), nullptr)));
+		}
 		else if (symbol->Is<FunctionSymbol>()) {
 			return ParseCall();
 		}
@@ -358,6 +360,19 @@ ImmediateNodePtr Compiler::ParseLiteralValue() {
 		break;
 	}
 	return nullptr;
+}
+
+ExprNodePtr Compiler::ParseArray(ExprNodePtr &&inherit) {
+	ExprNodePtr ret(move(inherit));
+	while (lexer_.Current().type_ == OP_LEFT_BRACKET) {
+		ExprNodePtr expr = ParseExpr();
+		lexer_.Consume(OP_RIGHT_BRACKET);
+
+		const Type* type = dynamic_cast<const Array*>(ret->type_)->element_type_;
+		ArrayNodePtr arr(new ArrayNode(NT_ARRAY, type, move(ret), move(expr)));
+		ret = move(arr);
+	}
+	return move(ret);
 }
 
 int64_t Compiler::ParseConstInt() {
