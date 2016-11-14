@@ -10,7 +10,7 @@ namespace pswgoo {
 enum TokenType {
 	NOT_DEFINED,
 	NT_TYPE_CAST, NT_CALL, NT_ARRAY,
-	NT_IF, NT_FOR, NT_WHILE,
+	NT_IF, NT_FOR, NT_WHILE, NT_STMT_BLOCK,
 
 	KEY_IF, KEY_ELSE, KEY_WHILE, KEY_FOR, KEY_SWITCH, 
 	KEY_CASE, KEY_STRUCT, KEY_CLASS, KEY_CONST, KEY_DO, 
@@ -32,7 +32,7 @@ enum TokenType {
 const std::vector<std::string> kTokenTypeStr = {
 	"NOT_DEFINED",
 	"NT_TYPE_CAST", "NT_CALL", "NT_ARRAY",
-	"NT_IF", "NT_FOR", "NT_WHILE",
+	"NT_IF", "NT_FOR", "NT_WHILE", "NT_STMT_BLOCK",
 
 	"KEY_IF", "KEY_ELSE", "KEY_WHILE", "KEY_FOR", "KEY_SWITCH", 
 	"KEY_CASE", "KEY_STRUCT", "KEY_CLASS", "KEY_CONST", "KEY_DO",
@@ -67,10 +67,7 @@ public:
 	// @return current token first, then cursor_ += 1;
 	const Token& GoNext();
 	bool Consume(TokenType token) {
-		if (Current().type_ != token) {
-			return false;
-			throw std::runtime_error("Token Consume not match: " + kTokenTypeStr[token] + "!=" + Current().value_);
-		}
+		assert(Current().type_ == token && ("Token Consume not match: " + kTokenTypeStr[token] + "!=" + Current().value_).c_str());
 		++cursor_;
 		return true;
 	}

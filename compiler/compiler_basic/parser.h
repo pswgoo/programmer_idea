@@ -174,6 +174,7 @@ public:
 
 class Reference : public Type {
 public:
+	Reference(const Type* target_type, Scope* parent_scope) : Type("ref@" + target_type->name(), kReference, parent_scope), target_type_(target_type) {}
 	virtual int64_t SizeOf() const override { return 8; }
 	const Type* target_type_;
 };
@@ -196,17 +197,18 @@ class Class : public Type {
 
 };
 
+static std::string kAstIndent = "  ";
 struct AstNode {
 	AstNode(TokenType token_type = NOT_DEFINED) : token_type_(token_type) {}
 	template<typename T>
 	bool Is() const {
 		return dynamic_cast<const T*>(this) != nullptr;
 	}
+	virtual void Print(std::ostream& oa, const std::string& padding)  const {
+		oa << padding + "{" << kTokenTypeStr[token_type_] << "}" << std::endl;
+	}
 
 	TokenType token_type_;
-
-protected:
-	virtual void V() {};
 };
 
 struct StmtNode : public AstNode {
@@ -216,60 +218,149 @@ typedef std::unique_ptr<StmtNode> StmtNodePtr;
 
 struct ExprNode : public StmtNode {
 	ExprNode(TokenType token_type, const Type* type) : StmtNode(token_type), type_(type) {}
+
+	virtual void Print(std::ostream& oa, const std::string& padding) const override{
+		oa << padding + "{" << "(" << type_->name() << ")" << kTokenTypeStr[token_type_] << "}" << std::endl;
+	}
+
 	const Type* type_;
 };
 typedef std::unique_ptr<ExprNode> ExprNodePtr;
 
 struct ImmediateNode : public ExprNode {
-	ImmediateNode(TokenType token_type, const Type* type, const std::string& value) : ExprNode(token_type, type), value_(value) {}
+	ImmediateNode(TokenType token_type, const Type* type, const std::string& value) : 
+		ExprNode(token_type, type), value_(value) {}
+
+	virtual void Print(std::ostream& oa, const std::string& padding) const override {
+		oa << padding + "{" << "(" << type_->name() << ")" << value_ << "}" << std::endl;
+	}
+
 	std::string value_;
 };
 typedef std::unique_ptr<ImmediateNode> ImmediateNodePtr;
 
 struct VariableNode : public ExprNode {
-	VariableNode(TokenType token_type, const Type* type, const std::string& var_name, ExprNodePtr&& expr) : ExprNode(token_type, type), var_name_(var_name), expr_(std::move(expr)) {}
+	VariableNode(TokenType token_type, const Type* type, const std::string& var_name, ExprNodePtr&& expr) : 
+		ExprNode(token_type, type), var_name_(var_name), expr_(std::move(expr)) {}
+
+	virtual void Print(std::ostream& oa, const std::string& padding) const override {
+		oa << padding + "{" << "(" << type_->name() << ")" << kTokenTypeStr[token_type_] << std::endl;
+		oa << padding << var_name_ << std::endl;
+		if (expr_)
+			expr_->Print(oa, padding + kAstIndent);
+		oa << padding + "}" << std::endl;
+	}
+
 	std::string var_name_;
-	ExprNodePtr expr_;
+	ExprNodePtr expr_; // may be nullptr
 };
 typedef std::unique_ptr<VariableNode> VariableNodePtr;
 
 struct AssignNode : public ExprNode {
-	AssignNode(TokenType token_type, const Type* type, ExprNodePtr&& left_var, ExprNodePtr&& right_expr) : ExprNode(token_type, type), left_var_(std::move(left_var)), right_expr_(std::move(right_expr)) {}
+	AssignNode(TokenType token_type, const Type* type, ExprNodePtr&& left_var, ExprNodePtr&& right_expr) : 
+		ExprNode(token_type, type), left_var_(std::move(left_var)), right_expr_(std::move(right_expr)) {}
+
+	virtual void Print(std::ostream& oa, const std::string& padding) const override {
+		oa << padding + "{" << "(" << type_->name() << ")" << kTokenTypeStr[token_type_] << std::endl;
+		left_var_->Print(oa, padding + kAstIndent);
+		right_expr_->Print(oa, padding + kAstIndent);
+		oa << padding + "}" << std::endl;
+	}
+
 	ExprNodePtr left_var_;
 	ExprNodePtr right_expr_;
 };
 
 struct BinaryOpNode : public ExprNode {
-	BinaryOpNode(TokenType token_type, const Type* type, ExprNodePtr&& left_expr, ExprNodePtr&& right_expr) : ExprNode(token_type, type), left_expr_(std::move(left_expr)), right_expr_(std::move(right_expr)) {}
+	BinaryOpNode(TokenType token_type, const Type* type, ExprNodePtr&& left_expr, ExprNodePtr&& right_expr) : 
+		ExprNode(token_type, type), left_expr_(std::move(left_expr)), right_expr_(std::move(right_expr)) {}
+
+	virtual void Print(std::ostream& oa, const std::string& padding) const override {
+		oa << padding + "{" << "(" << type_->name() << ")" << kTokenTypeStr[token_type_] << std::endl;
+		left_expr_->Print(oa, padding + kAstIndent);
+		right_expr_->Print(oa, padding + kAstIndent);
+		oa << padding + "}" << std::endl;
+	}
+
 	ExprNodePtr left_expr_;
 	ExprNodePtr right_expr_;
 };
 
 struct UnaryOpNode : public ExprNode {
-	UnaryOpNode(TokenType token_type, const Type* type, ExprNodePtr&& expr) : ExprNode(token_type, type), expr_(std::move(expr)) {}
+	UnaryOpNode(TokenType token_type, const Type* type, ExprNodePtr&& expr) : 
+		ExprNode(token_type, type), expr_(std::move(expr)) {}
+
+	virtual void Print(std::ostream& oa, const std::string& padding) const override {
+		oa << padding + "{" << "(" << type_->name() << ")" << kTokenTypeStr[token_type_] << std::endl;
+		expr_->Print(oa, padding + kAstIndent);
+		oa << padding + "}" << std::endl;
+	}
+
 	ExprNodePtr expr_;
 };
 struct ArrayNode : public ExprNode {
-	ArrayNode(TokenType token_type, const Type* type, ExprNodePtr&& base, ExprNodePtr&& index) : ExprNode(token_type, type), base_(std::move(base)), index_(std::move(index)) {}
+	ArrayNode(TokenType token_type, const Type* type, ExprNodePtr&& base, ExprNodePtr&& index) : 
+		ExprNode(token_type, type), base_(std::move(base)), index_(std::move(index)) {}
+
+	virtual void Print(std::ostream& oa, const std::string& padding) const override {
+		oa << padding + "{" << "(" << type_->name() << ")" << kTokenTypeStr[token_type_] << std::endl;
+		index_->Print(oa, padding + kAstIndent);
+		base_->Print(oa, padding + kAstIndent);
+		oa << padding + "}" << std::endl;
+	}
+
 	ExprNodePtr base_;  // array base address
 	ExprNodePtr index_;  // array index
 };
 typedef std::unique_ptr<ArrayNode> ArrayNodePtr;
 
 struct CallNode : public ExprNode {
-	CallNode(TokenType token_type, const Type* type, const std::string& func_name, std::vector<ExprNodePtr>&& params) : ExprNode(token_type, type), func_name_(func_name), params_(std::move(params)) {}
+	CallNode(TokenType token_type, const Type* type, const std::string& func_name, std::vector<ExprNodePtr>&& params) : 
+		ExprNode(token_type, type), func_name_(func_name), params_(std::move(params)) {}
+
+	virtual void Print(std::ostream& oa, const std::string& padding) const override {
+		oa << padding + "{" << "(" << type_->name() << ")" << type_->name() << " " << kTokenTypeStr[token_type_] << std::endl;
+		oa << padding << func_name_ << std::endl;
+		for (const ExprNodePtr& ptr : params_)
+			ptr->Print(oa, padding + kAstIndent);
+		oa << padding + "}" << std::endl;
+	}
+
 	std::string func_name_;
 	std::vector<ExprNodePtr> params_;
 };
 typedef std::unique_ptr<CallNode> CallNodePtr;
 
 struct DefNode : public ExprNode {
-	DefNode(TokenType token_type, const Type* type, const std::string& var_name, ExprNodePtr&& expr) : ExprNode(token_type, type), var_name_(var_name), expr_(std::move(expr)) {}
+	DefNode(TokenType token_type, const Type* type, const std::string& var_name, ExprNodePtr&& expr) : 
+		ExprNode(token_type, type), var_name_(var_name), expr_(std::move(expr)) {}
+
+	virtual void Print(std::ostream& oa, const std::string& padding) const override {
+		oa << padding + "{" << "(" << type_->name() << ")" << type_->name() << " " << kTokenTypeStr[token_type_] << std::endl;
+		oa << padding << var_name_ << std::endl;
+		expr_->Print(oa, padding + kAstIndent);
+		oa << padding + "}" << std::endl;
+	}
+
 	std::string var_name_;
 	ExprNodePtr expr_;
 };
 
 struct StmtBlockNode : public StmtNode {
+	StmtBlockNode() :StmtNode(NT_STMT_BLOCK) {};
+
+	void AddStmt(StmtNodePtr&& stmt) { if (stmt) stmts_.emplace_back(std::move(stmt)); }
+
+	virtual void Print(std::ostream& oa, const std::string& padding) const override {
+		oa << padding + "{" << kTokenTypeStr[token_type_] << std::endl;
+		for (const StmtNodePtr& ptr : stmts_)
+			if (ptr)
+				ptr->Print(oa, padding + kAstIndent);
+		oa << padding + "}" << std::endl;
+	}
+
+	
+private:
 	std::vector<StmtNodePtr> stmts_;
 };
 
@@ -291,7 +382,7 @@ struct WhileNode : public StmtNode {
 	StmtNodePtr body_;
 };
 
-class Compiler {
+class Compiler : public StmtBlockNode {
 public:
 	Compiler(): global_scope_(new Scope){
 		// put primitive types to global scope
@@ -322,7 +413,7 @@ private:
 
 	StmtNodePtr ParseStmt();
 
-	VariableSymbol ParseDecl();
+	const VariableSymbol* ParseDecl();
 
 	ExprNodePtr ParseExpr();
 
@@ -361,7 +452,6 @@ private:
 
 private:
 	Lexer lexer_;
-	StmtBlockNode stmt_block_;
 	Scope* current_scope_;
 	ScopePtr global_scope_;
 };

@@ -9,16 +9,16 @@ void Compiler::Parse(const std::string& program) {
 	while (!lexer_.Current().Non()) {
 		StmtNodePtr ptr = Parse();
 		if (ptr != nullptr)
-			stmt_block_.stmts_.emplace_back(move(ptr));
+			AddStmt(move(ptr));
 	}
 }
 
 StmtNodePtr Compiler::Parse() {
-	const Lexer::Token* tk = &lexer_.Current();
+	const Lexer::Token* tk = &(lexer_.GoNext());
 	if (tk->type_ == IDENTIFIER) {
 		const Symbol* symbol = current_scope_->Get(tk->value_);
 		if (symbol != nullptr && symbol->Is<Type>()) {
-			tk = &lexer_.ToNext();
+			tk = &(lexer_.GoNext());
 			if (tk->type_ == IDENTIFIER)
 				return ParseFuncDef1((const Type*)symbol, tk->value_);
 		}
@@ -34,7 +34,7 @@ StmtNodePtr Compiler::ParseFuncDef1(const Type* type, const std::string &name) {
 	current_scope_ = function_scope.get();
 	vector<VariableSymbol> params;
 	while (true) {
-		params.emplace_back(ParseDecl());
+		params.emplace_back(*ParseDecl());
 		if (lexer_.Current().type_ == OP_COMMA)
 			lexer_.ToNext();
 		else if (lexer_.Current().type_ == OP_RIGHT_PARENTHESIS) {
@@ -63,7 +63,7 @@ StmtNodePtr Compiler::ParseStmt() {
 		lexer_.Consume(OP_LEFT_BRACE);
 		unique_ptr<StmtBlockNode> stmt_block;
 		while (lexer_.Current().type_ != OP_RIGHT_BRACE) {
-			stmt_block_.stmts_.emplace_back(move(ParseStmt()));
+			stmt_block->AddStmt(move(ParseStmt()));
 			lexer_.Consume(OP_SEMICOLON);
 		}
 		lexer_.Consume(OP_RIGHT_BRACE);
@@ -75,7 +75,7 @@ StmtNodePtr Compiler::ParseStmt() {
 			lexer_.Consume(OP_SEMICOLON);
 			return nullptr;
 		}
-	default:
+	default: // Expression
 		StmtNodePtr expr = ParseExpr();
 		lexer_.Consume(OP_SEMICOLON);
 		return move(expr);
@@ -83,7 +83,7 @@ StmtNodePtr Compiler::ParseStmt() {
 	return nullptr;
 }
 
-VariableSymbol Compiler::ParseDecl() {
+const VariableSymbol* Compiler::ParseDecl() {
 	const Type* type = dynamic_cast<const Type*>(current_scope_->Get(lexer_.GoNext().value_));
 	assert(type != nullptr && "Type not exists!");
 	if (lexer_.Current().type_ == IDENTIFIER) {
@@ -101,12 +101,13 @@ VariableSymbol Compiler::ParseDecl() {
 		if (const Symbol* sym = current_scope_->GetCurrent(var))
 			if (const VariableSymbol* ptr_var = dynamic_cast<const VariableSymbol*>(sym))
 				assert(ptr_var->type_ == type && "Declare not consistence!");
-		current_scope_->Put(unique_ptr<VariableSymbol>(new VariableSymbol(var, type)));
+		const Symbol*symbol = current_scope_->Put(unique_ptr<VariableSymbol>(new VariableSymbol(var, type)));
+		return dynamic_cast<const VariableSymbol*>(symbol);
 	}
 	else// if (lexer_.Current().type_ == OP_LOGICAL_AND)
 		assert(0 && "Declare reference not implement!");
 
-	return VariableSymbol("", nullptr);
+	return nullptr;
 }
 
 ExprNodePtr Compiler::ParseExpr() {
