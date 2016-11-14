@@ -349,12 +349,13 @@ CallNodePtr Compiler::ParseCall() {
 	lexer_.Consume(OP_RIGHT_PARENTHESIS);
 	const Function* func_type = dynamic_cast<const Function*>(func_symbol->type_);
 	bool param_match = params.size() == func_type->param_types_.size();
-	if (param_match)
-		for (int i = 0; i < params.size(); ++i)
-			if (!(params[i]->type_->CouldPromoteTo(func_type->param_types_[i]))) {
-				param_match = false;
-				assert(0 && "Function paramater not compatible!");
-			}
+	assert(param_match && "Function paramater number not match!");
+	for (int i = 0; i < params.size(); ++i)
+		if (!(params[i]->type_->CouldPromoteTo(func_type->param_types_[i]))) {
+			param_match = false;
+			assert(0 && "Function paramater not compatible!");
+		}
+			
 	return CallNodePtr(new CallNode(NT_CALL, func_type->ret_type_, current_scope_, func_name, move(params)));
 }
 
