@@ -19,52 +19,63 @@ StmtNodePtr Compiler::Parse() {
 		const Symbol* symbol = current_scope_->Get(tk->value_);
 		if (symbol != nullptr && symbol->Is<Type>()) {
 			tk = &(lexer_.GoNext());
-			if (tk->type_ == IDENTIFIER)
-				return ParseFuncDef1((const Type*)symbol, tk->value_);
+			if (tk->type_ == IDENTIFIER) {
+				ParseFuncDef1((const Type*)symbol, tk->value_);
+				return nullptr;
+			}
 		}
 	}
 	return nullptr;
 }
 
-StmtNodePtr Compiler::ParseFuncDef1(const Type* type, const std::string &name) {
+void Compiler::ParseFuncDef1(const Type* type, const std::string &name) {
 	lexer_.Consume(OP_LEFT_PARENTHESIS);
 
 	ScopePtr function_scope(new Scope(current_scope_));
 	Scope* last_scope = current_scope_;
 	current_scope_ = function_scope.get();
-	vector<VariableSymbol> params;
-	while (true) {
-		params.emplace_back(*ParseDecl());
+	vector<const Type*> param_types;
+	vector<string> param_names;
+	pair<int, Scope*> type_scope_(type->parent_scope_->depth(), type->parent_scope_);
+	while (lexer_.Current().type_ != OP_RIGHT_PARENTHESIS) {
+		const VariableSymbol* var_symbol = ParseDecl();
+		param_names.emplace_back(var_symbol->name());
+		param_types.emplace_back(var_symbol->type_);
+		if (type_scope_.first < var_symbol->type_->parent_scope_->depth())
+			type_scope_ = { var_symbol->type_->parent_scope_->depth(), var_symbol->type_->parent_scope_ };
 		if (lexer_.Current().type_ == OP_COMMA)
 			lexer_.ToNext();
-		else if (lexer_.Current().type_ == OP_RIGHT_PARENTHESIS) {
-			lexer_.ToNext();
+		else if (lexer_.Current().type_ == OP_RIGHT_PARENTHESIS)
 			break;
-		}
 		else
 			assert(0 && "Function def paramaters not match!");
 	}
+	lexer_.Consume(OP_RIGHT_PARENTHESIS);
+	const Type* function_type = (const Type*)type_scope_.second->Put(unique_ptr<Function>(new Function(type, param_types)));
+	FunctionSymbolPtr func_ptr(new FunctionSymbol(name, param_names, nullptr, move(function_scope), function_type));
+	// left_func_ptr used to change function body.
+	FunctionSymbol* left_func_ptr = func_ptr.get();
+	// To support recursion, put function_symbol to scope first.
+	last_scope->Put(move(func_ptr));
 
 	StmtNodePtr body;
 	if (lexer_.Current().type_ == OP_LEFT_BRACE)
 		body = ParseStmt();
 	else
 		assert(0 && "Function Body must begin with left brace!");
-
-	const Type* function_type = (const Type*)last_scope->Put(unique_ptr<Function>(new Function(type, params)));
-	last_scope->Put(unique_ptr<FunctionSymbol>(new FunctionSymbol(name, move(body), move(function_scope), function_type)));
+	left_func_ptr->body_ = move(body);
 	current_scope_ = last_scope;
-	return nullptr;
+	all_functions_.push_back(left_func_ptr);
 }
 
 StmtNodePtr Compiler::ParseStmt() {
 	switch (lexer_.Current().type_) {
 	case OP_LEFT_BRACE: {
 		lexer_.Consume(OP_LEFT_BRACE);
-		unique_ptr<StmtBlockNode> stmt_block;
+		unique_ptr<StmtBlockNode> stmt_block(new StmtBlockNode());
 		while (lexer_.Current().type_ != OP_RIGHT_BRACE) {
 			stmt_block->AddStmt(move(ParseStmt()));
-			lexer_.Consume(OP_SEMICOLON);
+			//lexer_.Consume(OP_SEMICOLON);
 		}
 		lexer_.Consume(OP_RIGHT_BRACE);
 		return move(stmt_block);
@@ -95,8 +106,12 @@ const VariableSymbol* Compiler::ParseDecl() {
 			lexer_.Consume(OP_RIGHT_BRACKET);
 		}
 		for (int i = (int)dims.size() - 1; i >= 0; --i) {
-			TypePtr array_type(unique_ptr<Array>(new Array(type, dims[i], type->parent_scope_)));
+			TypePtr array_type(ArrayPtr(new Array(type, dims[i], type->parent_scope_)));
 			type = dynamic_cast<const Type*>(type->parent_scope_->Put(move(array_type)));
+		}
+		if (dims.size() > 0) {
+			TypePtr ref_array(ReferencePtr(new Reference(type, type->parent_scope_)));
+			type = dynamic_cast<const Type*>(type->parent_scope_->Put(move(ref_array)));
 		}
 		if (const Symbol* sym = current_scope_->GetCurrent(var))
 			if (const VariableSymbol* ptr_var = dynamic_cast<const VariableSymbol*>(sym))
@@ -125,6 +140,7 @@ ExprNodePtr Compiler::ParseER(ExprNodePtr &&inherit) {
 		lexer_.ToNext();
 		ExprNodePtr ptr_expr = ParseE1();
 		ExprNodePtr ptr_expr_r = ParseER(move(ptr_expr));
+		assert(ptr_expr_r->type_->CouldPromoteTo(inherit->type_) && "Type narrowed!");
 		return ExprNodePtr(new AssignNode(op_type, inherit->type_, move(inherit), move(ptr_expr_r)));
 	}
 	default:
@@ -332,31 +348,31 @@ CallNodePtr Compiler::ParseCall() {
 	}
 	lexer_.Consume(OP_RIGHT_PARENTHESIS);
 	const Function* func_type = dynamic_cast<const Function*>(func_symbol->type_);
-	bool param_match = params.size() == func_type->params_.size();
+	bool param_match = params.size() == func_type->param_types_.size();
 	if (param_match)
 		for (int i = 0; i < params.size(); ++i)
-			if (!(params[i]->type_->CouldPromoteTo(func_type->params_[i].type_))) {
+			if (!(params[i]->type_->CouldPromoteTo(func_type->param_types_[i]))) {
 				param_match = false;
 				assert(0 && "Function paramater not compatible!");
 			}
-	return CallNodePtr(new CallNode(NT_CALL, func_type->ret_type_, func_name, move(params)));
+	return CallNodePtr(new CallNode(NT_CALL, func_type->ret_type_, current_scope_, func_name, move(params)));
 }
 
 ImmediateNodePtr Compiler::ParseLiteralValue() {
 	TokenType type = lexer_.Current().type_;
 	switch (type) {
 	case BOOLEAN:
-		return ImmediateNodePtr(new ImmediateNode(type, GetType("bool"), lexer_.Current().value_));
+		return ImmediateNodePtr(new ImmediateNode(type, GetType("bool"), lexer_.GoNext().value_));
 	case CHAR:
-		return ImmediateNodePtr(new ImmediateNode(type, GetType("char"), lexer_.Current().value_));
+		return ImmediateNodePtr(new ImmediateNode(type, GetType("char"), lexer_.GoNext().value_));
 	case INTEGER:
-		return ImmediateNodePtr(new ImmediateNode(type, GetType("int"), lexer_.Current().value_));
+		return ImmediateNodePtr(new ImmediateNode(type, GetType("int"), lexer_.GoNext().value_));
 	case REAL:
-		return ImmediateNodePtr(new ImmediateNode(type, GetType("double"), lexer_.Current().value_));
+		return ImmediateNodePtr(new ImmediateNode(type, GetType("double"), lexer_.GoNext().value_));
 	/*case STRING:
-		return ImmediateNodePtr(new ImmediateNode(type, GetType("string"), lexer_.Current().value_));*/
+		return ImmediateNodePtr(new ImmediateNode(type, GetType("string"), lexer_.GoNext().value_));*/
 	/*case NULL_REF:
-		return ImmediateNodePtr(new ImmediateNode(type, GetType("ref_void"), lexer_.Current().value_));*/
+		return ImmediateNodePtr(new ImmediateNode(type, GetType("ref_void"), lexer_.GoNext().value_));*/
 	default:
 		break;
 	}
@@ -366,10 +382,15 @@ ImmediateNodePtr Compiler::ParseLiteralValue() {
 ExprNodePtr Compiler::ParseArray(ExprNodePtr &&inherit) {
 	ExprNodePtr ret(move(inherit));
 	while (lexer_.Current().type_ == OP_LEFT_BRACKET) {
+		lexer_.Consume(OP_LEFT_BRACKET);
 		ExprNodePtr expr = ParseExpr();
 		lexer_.Consume(OP_RIGHT_BRACKET);
 
-		const Type* type = dynamic_cast<const Array*>(ret->type_)->element_type_;
+		const Type* type = nullptr;
+		if (const Reference* ref_type = dynamic_cast<const Reference*>(ret->type_))
+			type = ref_type->Get<Array>()->element_type_;
+		else
+			type = dynamic_cast<const Array*>(ret->type_)->element_type_;
 		ArrayNodePtr arr(new ArrayNode(NT_ARRAY, type, move(ret), move(expr)));
 		ret = move(arr);
 	}

@@ -6,6 +6,7 @@
 #include <vector>
 #include <string>
 #include <memory>
+#include <iostream>
 #include <unordered_map>
 
 namespace pswgoo {
@@ -59,15 +60,18 @@ public:
 
 class FunctionSymbol : public ConstSymbol {
 public:
-	FunctionSymbol(const std::string& name, AstNodePtr&& body, ScopePtr&& scope, const Type* type) : ConstSymbol(name, type), body_(std::move(body)), scope_(std::move(scope)) {}
+	FunctionSymbol(const std::string& name, const std::vector<std::string>& param_names, AstNodePtr&& body, ScopePtr&& scope, const Type* type) : 
+		ConstSymbol(name, type), param_names_(param_names), body_(std::move(body)), scope_(std::move(scope)) {}
 
+	std::vector<std::string> param_names_;
 	AstNodePtr body_;
 	ScopePtr scope_;
 };
+typedef std::unique_ptr<FunctionSymbol> FunctionSymbolPtr;
 
 class Scope {
 public:
-	Scope(const Scope* parent_ptr = nullptr) : parent_(parent_ptr) {}
+	Scope(const Scope* parent_ptr = nullptr) : parent_(parent_ptr) { if (parent_) depth_ = parent_->depth_ + 1; }
 
 	const Symbol* GetCurrent(const std::string& name) const {
 		std::unordered_map<std::string, SymbolPtr>::const_iterator fid = symbol_table_.find(name);
@@ -88,12 +92,19 @@ public:
 		SymbolPtr& ptr = symbol_table_[symbol_ptr->name()];
 		if (!ptr)
 			ptr = std::move(symbol_ptr);
+		else
+			std::clog << "Warning: " << symbol_ptr->name() << " has been inserted to the scope";
 		return ptr.get();
 	}
+	Symbol* Get(const std::string& name) {
+		return const_cast<Symbol*>(const_cast<const Scope*>(this)->Get(name));
+	}
 	const Scope* parent() const {	return parent_; }
+	int depth() const { return depth_; }
 
 private:
 	const Scope* parent_ = nullptr;
+	int depth_ = 0;
 	std::unordered_map<std::string, SymbolPtr> symbol_table_;
 };
 
@@ -164,33 +175,40 @@ public:
 
 class Array : public Type {
 public:
-	Array(const Type* type, int64_t length, Scope* parent_scope) : Type(std::to_string(length) + "_" + type->name(), kArray, parent_scope), element_type_(type), length_(length) {}
+	Array(const Type* type, int64_t length, Scope* parent_scope) : Type(type->name() + "_" + std::to_string(length), kArray, parent_scope), element_type_(type), length_(length) {}
 
 	virtual int64_t SizeOf() const override { return element_type_->SizeOf() * length_; }
 
 	const Type* element_type_;
 	int64_t length_;
 };
+typedef std::unique_ptr<Array> ArrayPtr;
 
 class Reference : public Type {
 public:
 	Reference(const Type* target_type, Scope* parent_scope) : Type("ref@" + target_type->name(), kReference, parent_scope), target_type_(target_type) {}
 	virtual int64_t SizeOf() const override { return 8; }
+	template<typename T>
+	const T* Get() const {
+		return dynamic_cast<const T*>(target_type_);
+	}
+
 	const Type* target_type_;
 };
+typedef std::unique_ptr<Reference> ReferencePtr;
 
 class Function : public Type {
 public:
-	Function(const Type* ret_type, const std::vector<VariableSymbol>& params) :Type(kFunction), ret_type_(ret_type), params_(params) {
+	Function(const Type* ret_type, const std::vector<const Type*>& param_types) :Type(kFunction), ret_type_(ret_type), param_types_(param_types) {
 		name_ = "func";
-		for (int i = 0; i < params.size(); ++i)
-			name_ += "#" + params[i].type_->name();
+		for (int i = 0; i < param_types.size(); ++i)
+			name_ += "#" + param_types[i]->name();
 	}
 
 	virtual int64_t SizeOf() const override { return 8; }
 
 	const Type* ret_type_;
-	std::vector<VariableSymbol> params_;
+	std::vector<const Type*> param_types_;
 };
 
 class Class : public Type {
@@ -315,18 +333,22 @@ struct ArrayNode : public ExprNode {
 typedef std::unique_ptr<ArrayNode> ArrayNodePtr;
 
 struct CallNode : public ExprNode {
-	CallNode(TokenType token_type, const Type* type, const std::string& func_name, std::vector<ExprNodePtr>&& params) : 
-		ExprNode(token_type, type), func_name_(func_name), params_(std::move(params)) {}
+	CallNode(TokenType token_type, const Type* type, const Scope* scope, const std::string& func_name, std::vector<ExprNodePtr>&& params) :
+		ExprNode(token_type, type), func_name_(func_name), scope_(scope), params_(std::move(params)) {}
 
 	virtual void Print(std::ostream& oa, const std::string& padding) const override {
-		oa << padding + "{" << "(" << type_->name() << ")" << type_->name() << " " << kTokenTypeStr[token_type_] << std::endl;
+		oa << padding + "{" << "(" << type_->name() << ")" << kTokenTypeStr[token_type_] << std::endl;
 		oa << padding << func_name_ << std::endl;
+		oa << padding << "params" << std::endl;
 		for (const ExprNodePtr& ptr : params_)
 			ptr->Print(oa, padding + kAstIndent);
+		/*oa << padding << "body:" << std::endl;
+		dynamic_cast<const FunctionSymbol*>(scope_->Get(func_name_))->body_->Print(oa, padding + kAstIndent);*/
 		oa << padding + "}" << std::endl;
 	}
 
 	std::string func_name_;
+	const Scope* scope_;
 	std::vector<ExprNodePtr> params_;
 };
 typedef std::unique_ptr<CallNode> CallNodePtr;
@@ -336,7 +358,7 @@ struct DefNode : public ExprNode {
 		ExprNode(token_type, type), var_name_(var_name), expr_(std::move(expr)) {}
 
 	virtual void Print(std::ostream& oa, const std::string& padding) const override {
-		oa << padding + "{" << "(" << type_->name() << ")" << type_->name() << " " << kTokenTypeStr[token_type_] << std::endl;
+		oa << padding + "{" << "(" << type_->name() << ")" << kTokenTypeStr[token_type_] << std::endl;
 		oa << padding << var_name_ << std::endl;
 		expr_->Print(oa, padding + kAstIndent);
 		oa << padding + "}" << std::endl;
@@ -352,13 +374,11 @@ struct StmtBlockNode : public StmtNode {
 	void AddStmt(StmtNodePtr&& stmt) { if (stmt) stmts_.emplace_back(std::move(stmt)); }
 
 	virtual void Print(std::ostream& oa, const std::string& padding) const override {
-		oa << padding + "{" << kTokenTypeStr[token_type_] << std::endl;
+		oa << padding + "{" << kTokenTypeStr[token_type_] << " " << stmts_.size() << std::endl;
 		for (const StmtNodePtr& ptr : stmts_)
-			if (ptr)
-				ptr->Print(oa, padding + kAstIndent);
+			ptr->Print(oa, padding + kAstIndent);
 		oa << padding + "}" << std::endl;
 	}
-
 	
 private:
 	std::vector<StmtNodePtr> stmts_;
@@ -397,6 +417,21 @@ public:
 
 	void Parse(const std::string& program);
 
+	virtual void Print(std::ostream& oa, const std::string& padding) const override {
+		for (const FunctionSymbol* func : all_functions_) {
+			const Function* func_type = dynamic_cast<const Function*>(func->type_);
+			oa << padding + "{Function: " << func->name() << std::endl;
+			oa << padding << "return: " << func_type->ret_type_->name()<< std::endl;
+			oa << padding << "params: ";
+			for (int i = 0; i < func->param_names_.size(); ++i) {
+				oa << (i > 0 ? "," : "") << "(" << func_type->param_types_[i]->name() << ")" << func->param_names_[i];
+			}
+			oa << std::endl << padding << "body:" << std::endl;
+			func->body_->Print(oa, padding + kAstIndent);
+			oa << padding + "}" << std::endl;
+		}
+	}
+
 private:
 	bool CurrentIsType() const {
 		if (lexer_.Current().type_ == IDENTIFIER) {
@@ -409,7 +444,7 @@ private:
 
 	StmtNodePtr Parse();
 
-	StmtNodePtr ParseFuncDef1(const Type* type, const std::string &name);
+	void ParseFuncDef1(const Type* type, const std::string &name);
 
 	StmtNodePtr ParseStmt();
 
@@ -445,8 +480,7 @@ private:
 	ImmediateNodePtr ParseLiteralValue();
 	ExprNodePtr ParseArray(ExprNodePtr &&inherit);
 	
-
-	const Type* GetType(const std::string& type_name) {
+	const Type* GetType(const std::string& type_name) const {
 		return dynamic_cast<const Type*>(current_scope_->Get(type_name));
 	}
 
@@ -454,6 +488,7 @@ private:
 	Lexer lexer_;
 	Scope* current_scope_;
 	ScopePtr global_scope_;
+	std::vector<const FunctionSymbol*> all_functions_;
 };
 
 

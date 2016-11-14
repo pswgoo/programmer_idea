@@ -1,4 +1,5 @@
 #include <iostream>
+#include <fstream>
 
 #include "compiler/compiler_basic/lexer.h"
 #include "compiler/compiler_basic/parser.h"
@@ -15,27 +16,28 @@ int add(int a, int b) {
 	ret = a + b;
 }
 
-int main(int argc, char argv) {
+int main() {
 	int a;
 	a = 2;
+	int b;
 	b = a + 3;
+	int c;
 	c = 5;
 	char d;
-	d = 'c';
-	c = add(a, c);
+	d = (char)(c+a);
+	c = add(main(a,b), c);
 	
 	int e[10][50][30];
-	b = e[2][1][3] + a;
+	b = e[2][1][3] + d;
 }
 
 	)DELIM";
 
-	
-
 	try {
 		Compiler parser;
 		parser.Parse(test_str);
-		parser.Print(cout,"");
+		ofstream fout("ast.txt");
+		parser.Print(fout,"");
 	} catch (exception e) {
 		cerr << e.what() << endl;
 	}
