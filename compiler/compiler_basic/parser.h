@@ -99,7 +99,7 @@ public:
 	Symbol* Get(const std::string& name) {
 		return const_cast<Symbol*>(const_cast<const Scope*>(this)->Get(name));
 	}
-	const Scope* parent() const {	return parent_; }
+	const Scope* parent() const { return parent_; }
 	int depth() const { return depth_; }
 
 private:
@@ -175,7 +175,8 @@ public:
 
 class Array : public Type {
 public:
-	Array(const Type* type, int64_t length, Scope* parent_scope) : Type(type->name() + "_" + std::to_string(length), kArray, parent_scope), element_type_(type), length_(length) {}
+	Array(const Type* type, int64_t length, Scope* parent_scope) : 
+		Type(type->name() + "_" + std::to_string(length), kArray, parent_scope), element_type_(type), length_(length) {}
 
 	virtual int64_t SizeOf() const override { return element_type_->SizeOf() * length_; }
 
@@ -186,7 +187,8 @@ typedef std::unique_ptr<Array> ArrayPtr;
 
 class Reference : public Type {
 public:
-	Reference(const Type* target_type, Scope* parent_scope) : Type("ref@" + target_type->name(), kReference, parent_scope), target_type_(target_type) {}
+	Reference(const Type* target_type, Scope* parent_scope) : 
+		Type("ref@" + target_type->name(), kReference, parent_scope), target_type_(target_type) {}
 	virtual int64_t SizeOf() const override { return 8; }
 	template<typename T>
 	const T* Get() const {
@@ -199,7 +201,8 @@ typedef std::unique_ptr<Reference> ReferencePtr;
 
 class Function : public Type {
 public:
-	Function(const Type* ret_type, const std::vector<const Type*>& param_types) :Type(kFunction), ret_type_(ret_type), param_types_(param_types) {
+	Function(const Type* ret_type, const std::vector<const Type*>& param_types) :
+		Type(kFunction), ret_type_(ret_type), param_types_(param_types) {
 		name_ = "func";
 		for (int i = 0; i < param_types.size(); ++i)
 			name_ += "#" + param_types[i]->name();
@@ -416,6 +419,8 @@ public:
 	}
 
 	void Parse(const std::string& program);
+
+	void Generate();
 
 	virtual void Print(std::ostream& oa, const std::string& padding) const override {
 		for (const FunctionSymbol* func : all_functions_) {
