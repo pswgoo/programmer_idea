@@ -1,6 +1,7 @@
 #pragma once
 
 #include "lexer.h"
+#include "instruction.h"
 
 #include <cstdint>
 #include <vector>
@@ -26,10 +27,12 @@ public:
 		return dynamic_cast<const T*>(this) != nullptr;
 	}
 
+	friend class Scope;
 protected:
 	virtual void V() {};
 
 	std::string name_;
+	int serial_;
 };
 typedef std::unique_ptr<Symbol> SymbolPtr;
 
@@ -60,7 +63,7 @@ public:
 
 class FunctionSymbol : public ConstSymbol {
 public:
-	FunctionSymbol(const std::string& name, const std::vector<std::string>& param_names, AstNodePtr&& body, ScopePtr&& scope, const Type* type) : 
+	FunctionSymbol(const std::string& name, const std::vector<std::string>& param_names, AstNodePtr&& body, ScopePtr&& scope, const Type* type) :
 		ConstSymbol(name, type), param_names_(param_names), body_(std::move(body)), scope_(std::move(scope)) {}
 
 	std::vector<std::string> param_names_;
@@ -90,10 +93,10 @@ public:
 	}
 	const Symbol* Put(SymbolPtr&& symbol_ptr) {
 		SymbolPtr& ptr = symbol_table_[symbol_ptr->name()];
-		if (!ptr)
+		if (!ptr) {
 			ptr = std::move(symbol_ptr);
-		else
-			std::clog << "Warning: " << symbol_ptr->name() << " has been inserted to the scope";
+			ptr->serial_ = (int)symbol_table_.size() - 1;
+		}
 		return ptr.get();
 	}
 	Symbol* Get(const std::string& name) {

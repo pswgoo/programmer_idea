@@ -1,0 +1,65 @@
+Instruction:
+newarray: dim //多维数组全摊平成1维数组
+arrayref
+new: const_table
+add/sub/mul/div/mod - char/int/long/float/double
+eq,lt,gt,le,ge,nt,ne - char/int/long/float/double
+call: const_table
+goto
+iftrue
+
+print
+
+
+0. 存储空间
+StaticFieldSize: 静态存储区大小（byte）
+FieldSize：非静态存储区大小（byte）
+
+1.ConstPool部分:
+
+ConstPool: vector<ConstPoolNodee>
+
+struct ConstPoolNode {
+	int NodeType;
+	int name_length;
+	string name;
+}
+
+NodeType:
+Function
+Literal    # 表示各个基础类型常量  bool/char/int/long/float/double/string
+Field
+PrimarayTypeName
+Class
+
+name_length: sizeof name
+
+name:
+对于其他文件的symbol，用"<"开头,例如：<scope_name.symbol_name
+对于本文件global的symbol，直接用symbol_name,
+如果是本文件中其他class的field，则用">"开头，例如：>sub_scope.symbol_name
+
+2. Descriptor部分
+
+Function：
+函数名（签名）
+返回类型
+参数个数
+局部变量类型列表（函数参数列表类型排前面）(应该只需要用每个类型的字节长度就可以了)
+Code
+
+Field:
+FieldName
+offset
+DataType
+
+PrimarayType:
+PrimarayTypeName
+sizeof
+
+Literal:
+value
+primary_type
+
+Class:
+和文件结构一样
