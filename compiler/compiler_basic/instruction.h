@@ -1,5 +1,9 @@
 #pragma once
 
+#include <cstdint>
+
+namespace pswgoo {
+
 struct Instruction {
 	enum Opcode {
 		kRefA,		//引用数组，取栈顶 8 byte 作为下标
@@ -79,10 +83,31 @@ struct Instruction {
 		kAnd,		// (byte1,byte2) -> byte; if byte1 is 1 and byte2 is 1, push 1; else push 0.
 		kOr,
 		kNot,		// byte1 -> byte; if byte1 is 0, push 1, if byte1 is 1, push 0.
+
+		kPutC,		//$char_literal; push a char literal value to operand stack.
+		kPutI,		//$int_literal; push a int literal value to operand stack.
+		kPutL,
+		kPutF,
+		kPutD,
+		kPutN,		//$nullptr; push nullptr to operand stack.
+
+		kLoadC,
+		kLoadI,		//@local_stack_index; load a local int variable to operand stack.
+		kLoadL,
+		kLoadF,
+		kLoadD,
+		kLoadR,
+
+		kStoreC,
+		kStoreI,
+		kStoreL,
+		kStoreF,
+		kStoreD,
+		kStoreR,
 	};
 
 	Opcode op_;
 	int64_t param;
 };
 
-
+} // namespace pswgoo

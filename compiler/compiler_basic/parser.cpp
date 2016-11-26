@@ -317,7 +317,7 @@ ExprNodePtr Compiler::ParseE11() {
 		assert(symbol && (lexer_.Current().value_ + " not defined").c_str());
 		if (const ImmediateSymbol* immediate = dynamic_cast<const ImmediateSymbol*>(symbol)) {
 			lexer_.ToNext();
-			return ExprNodePtr(new ImmediateNode(IDENTIFIER, immediate->type_, immediate->value_));
+			return ExprNodePtr(new ImmediateNode(IDENTIFIER, immediate->type_, immediate->literal_symbol_->value_));
 		}
 		else if (const VariableSymbol* var = dynamic_cast<const VariableSymbol*>(symbol)) {
 			lexer_.ToNext();
@@ -407,8 +407,8 @@ int64_t Compiler::ParseConstInt() {
 		assert(sym != nullptr && "Identifier is not ImmediateSymbol or not defined!");
 		if (sym->type_->CouldPromoteTo(ptr_long)) {
 			if (sym->type_->Is<Char>())
-				return sym->value_.front();
-			return stoll(sym->value_);
+				return sym->literal_symbol_->value_.front();
+			return stoll(sym->literal_symbol_->value_);
 		}
 	}
 	assert(0 && "ParseConstInt failed!");

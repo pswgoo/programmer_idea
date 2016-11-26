@@ -11,7 +11,13 @@ iftrue
 print
 
 
-0. 存储空间
+存储方式 padding等应该都由VM来做。
+包括local variable数组的存储方式都应该由VM来做。
+字节码只需要告诉VM用的是哪个local variable。
+
+函数内部循环等scope嵌套时，最简单的办法是认为内部scope里面所有的variable都和函数的其他local variaable一样，不考虑内存优化的问题。
+
+0. 存储空间 
 StaticFieldSize: 静态存储区大小（byte）
 FieldSize：非静态存储区大小（byte）
 

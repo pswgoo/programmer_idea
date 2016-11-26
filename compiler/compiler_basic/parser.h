@@ -7,6 +7,7 @@
 #include <vector>
 #include <string>
 #include <memory>
+#include <algorithm>
 #include <iostream>
 #include <unordered_map>
 
@@ -15,105 +16,41 @@ namespace pswgoo {
 struct AstNode;
 typedef std::unique_ptr<AstNode> AstNodePtr;
 
-class Symbol {
+class Object {
+public:
+	template<typename T>
+	bool Is() const {
+		return dynamic_cast<const T*>(this) != nullptr;
+	}
+	template<typename T>
+	const T* To() const {
+		return dynamic_cast<const T*>(this);
+	}
+	template<typename T>
+	T* To() {
+		return dynamic_cast<T*>(this);
+	}
+protected:
+	virtual void V() {};
+};
+
+class Symbol: public Object {
 public:
 	Symbol() = default;
 	Symbol(const std::string& name) : name_(name) {}
 
 	const std::string& name()const { return name_; }
 
-	template<typename T>
-	bool Is() const {
-		return dynamic_cast<const T*>(this) != nullptr;
-	}
-
 	friend class Scope;
-protected:
-	virtual void V() {};
 
 	std::string name_;
-	int serial_;
+	int64_t index_; // for global scope, it is const symbol table index; for local scope, it is local stack index.
 };
 typedef std::unique_ptr<Symbol> SymbolPtr;
 
-class Type;
-typedef std::unique_ptr<Type> TypePtr;
-class Scope;
-typedef std::unique_ptr<Scope> ScopePtr;
-
-class VariableSymbol : public Symbol {
-public:
-	VariableSymbol(const std::string& name, const Type* type) : Symbol(name), type_(type) {}
-	const Type* type_;
-};
-
-class ConstSymbol : public Symbol {
-public:
-	ConstSymbol(const std::string& name, const Type* type) : Symbol(name), type_(type) {}
-	const Type* type_;
-};
-
-// ImmediateSymbol must know value in compiling time.
-class ImmediateSymbol : public ConstSymbol {
-public:
-	ImmediateSymbol(const std::string& name, const Type* type, const std::string& value) : ConstSymbol(name, type), value_(value) {}
-	const Type* type_;
-	std::string value_;
-};
-
-class FunctionSymbol : public ConstSymbol {
-public:
-	FunctionSymbol(const std::string& name, const std::vector<std::string>& param_names, AstNodePtr&& body, ScopePtr&& scope, const Type* type) :
-		ConstSymbol(name, type), param_names_(param_names), body_(std::move(body)), scope_(std::move(scope)) {}
-
-	std::vector<std::string> param_names_;
-	AstNodePtr body_;
-	ScopePtr scope_;
-};
-typedef std::unique_ptr<FunctionSymbol> FunctionSymbolPtr;
-
-class Scope {
-public:
-	Scope(const Scope* parent_ptr = nullptr) : parent_(parent_ptr) { if (parent_) depth_ = parent_->depth_ + 1; }
-
-	const Symbol* GetCurrent(const std::string& name) const {
-		std::unordered_map<std::string, SymbolPtr>::const_iterator fid = symbol_table_.find(name);
-		if (symbol_table_.end() != fid)
-			return fid->second.get();
-		return nullptr;
-	}
-	const Symbol* Get(const std::string& name) const {
-		const Scope* ptr = this;
-		while (ptr != nullptr) {
-			if (const Symbol* ret_ptr = ptr->GetCurrent(name))
-				return ret_ptr;
-			ptr = ptr->parent_;
-		}
-		return nullptr;
-	}
-	const Symbol* Put(SymbolPtr&& symbol_ptr) {
-		SymbolPtr& ptr = symbol_table_[symbol_ptr->name()];
-		if (!ptr) {
-			ptr = std::move(symbol_ptr);
-			ptr->serial_ = (int)symbol_table_.size() - 1;
-		}
-		return ptr.get();
-	}
-	Symbol* Get(const std::string& name) {
-		return const_cast<Symbol*>(const_cast<const Scope*>(this)->Get(name));
-	}
-	const Scope* parent() const { return parent_; }
-	int depth() const { return depth_; }
-
-private:
-	const Scope* parent_ = nullptr;
-	int depth_ = 0;
-	std::unordered_map<std::string, SymbolPtr> symbol_table_;
-};
-
 class Type : public Symbol {
 public:
-	enum TypeId {kNon, kBool, kChar, kInt, kLong, kFloat, kDouble, kPrimitiveType, kArray, kReference, kFunction, kClass};
+	enum TypeId { kBool, kChar, kInt, kLong, kFloat, kDouble, kReference, kPrimitiveType, kArray, kFunction, kClass };
 	Type(TypeId type_id) : type_id_(type_id) {}
 	Type(const std::string& name, TypeId type_id, Scope* parent_scope) : Symbol(name), type_id_(type_id), parent_scope_(parent_scope) {}
 
@@ -139,6 +76,120 @@ public:
 	TypeId type_id_;
 	Scope* parent_scope_;
 };
+typedef std::unique_ptr<Type> TypePtr;
+
+class LiteralSymbol;
+class ImmediateSymbol;
+class Scope: public Object {
+public:
+	Scope(const Scope* parent_ptr = nullptr) : parent_(parent_ptr) { if (parent_) depth_ = parent_->depth_ + 1; }
+
+	const Symbol* GetCurrent(const std::string& name) const {
+		std::unordered_map<std::string, SymbolPtr>::const_iterator fid = symbol_table_.find(name);
+		if (symbol_table_.end() != fid)
+			return fid->second.get();
+		return nullptr;
+	}
+	const Symbol* Get(const std::string& name) const {
+		const Scope* ptr = this;
+		while (ptr != nullptr) {
+			if (const Symbol* ret_ptr = ptr->GetCurrent(name))
+				return ret_ptr;
+			ptr = ptr->parent_;
+		}
+		return nullptr;
+	}
+	virtual const Symbol* Put(SymbolPtr&& symbol_ptr) {
+		SymbolPtr& ptr = symbol_table_[symbol_ptr->name()];
+		if (!ptr) {
+			ptr = std::move(symbol_ptr);
+			if (!symbol_ptr->Is<ImmediateSymbol>() && !symbol_ptr->Is<LiteralSymbol>())
+				ptr->index_ = top_++;
+		}
+		return ptr.get();
+	}
+	Symbol* Get(const std::string& name) {
+		return const_cast<Symbol*>(const_cast<const Scope*>(this)->Get(name));
+	}
+	const Scope* parent() const { return parent_; }
+	int depth() const { return depth_; }
+
+
+protected:
+	const Scope* parent_ = nullptr;
+	int depth_ = 0;
+	int64_t top_ = 0;
+	std::unordered_map<std::string, SymbolPtr> symbol_table_;
+};
+typedef std::unique_ptr<Scope> ScopePtr;
+
+class VariableSymbol : public Symbol {
+public:
+	VariableSymbol(const std::string& name, const Type* type) : Symbol(name), type_(type) {}
+	const Type* type_; // must be PrimaryType
+};
+
+class LocalScope : public Scope {
+public:
+	LocalScope(const Scope* parent) : Scope(parent), stack_start_(0), max_stack_size_(0) {
+		if (parent_->Is<LocalScope>())
+			top_ = stack_start_ = parent->To<LocalScope>()->stack_start_;
+	}
+
+	const Symbol* Put(SymbolPtr&& symbol_ptr) override {
+		SymbolPtr& ptr = symbol_table_[symbol_ptr->name()];
+		if (!ptr) {
+			ptr = std::move(symbol_ptr);
+			if (symbol_ptr->Is<VariableSymbol>()) {
+				ptr->index_ = top_;
+				top_ += symbol_ptr->To<VariableSymbol>()->type_->SizeOf();
+			}
+		}
+		return ptr.get();
+	}
+	void add_child_scope(std::unique_ptr<LocalScope>&& child_scope) {
+		max_stack_size_ = std::max(max_stack_size_, top_ - stack_start_ + child_scope->max_stack_size_);
+		child_scopes_.emplace_back(std::move(child_scope));
+	}
+
+protected:
+	int64_t stack_start_;
+	int64_t max_stack_size_;
+	std::vector<std::unique_ptr<LocalScope>> child_scopes_;
+};
+typedef std::unique_ptr<LocalScope> LocalScopePtr;
+
+class ConstSymbol : public Symbol {
+public:
+	ConstSymbol(const std::string& name, const Type* type) : Symbol(name), type_(type) {}
+	const Type* type_;
+};
+
+class LiteralSymbol : public ConstSymbol {
+public:
+	LiteralSymbol(const Type* type, const std::string& value) : ConstSymbol("$" + value + "$" + type->name(), type), value_(value) {}
+	const Type* type_;
+	std::string value_;
+};
+
+// ImmediateSymbol must know value in compiling time.
+class ImmediateSymbol : public ConstSymbol {
+public:
+	ImmediateSymbol(const std::string& name, const Type* type, const LiteralSymbol* ptr_symbol) : ConstSymbol(name, type), literal_symbol_(ptr_symbol) {}
+	const Type* type_;
+	const LiteralSymbol* literal_symbol_;
+};
+
+class FunctionSymbol : public ConstSymbol {
+public:
+	FunctionSymbol(const std::string& name, const std::vector<std::string>& param_names, AstNodePtr&& body, ScopePtr&& scope, const Type* type) :
+		ConstSymbol(name, type), param_names_(param_names), body_(std::move(body)), scope_(std::move(scope)) {}
+
+	std::vector<std::string> param_names_;
+	AstNodePtr body_;
+	ScopePtr scope_;
+};
+typedef std::unique_ptr<FunctionSymbol> FunctionSymbolPtr;
 
 class Bool : public Type {
 public:
@@ -222,12 +273,9 @@ class Class : public Type {
 };
 
 static std::string kAstIndent = "  ";
-struct AstNode {
+struct AstNode : public Object {
 	AstNode(TokenType token_type = NOT_DEFINED) : token_type_(token_type) {}
-	template<typename T>
-	bool Is() const {
-		return dynamic_cast<const T*>(this) != nullptr;
-	}
+
 	virtual void Print(std::ostream& oa, const std::string& padding)  const {
 		oa << padding + "{" << kTokenTypeStr[token_type_] << "}" << std::endl;
 	}
@@ -276,6 +324,7 @@ struct VariableNode : public ExprNode {
 	}
 
 	std::string var_name_;
+	const VariableSymbol* symbol_;
 	ExprNodePtr expr_; // may be nullptr
 };
 typedef std::unique_ptr<VariableNode> VariableNodePtr;
@@ -460,8 +509,6 @@ private:
 
 	ExprNodePtr ParseExpr();
 
-	int64_t ParseConstInt();
-
 private:
 	ExprNodePtr ParseER(ExprNodePtr &&inherit);
 	ExprNodePtr ParseE1();
@@ -485,6 +532,8 @@ private:
 	ExprNodePtr ParseE10();
 	ExprNodePtr ParseE11();
 	CallNodePtr ParseCall();
+	// TODO: literal value to symbol_table
+	int64_t ParseConstInt();
 	ImmediateNodePtr ParseLiteralValue();
 	ExprNodePtr ParseArray(ExprNodePtr &&inherit);
 	
