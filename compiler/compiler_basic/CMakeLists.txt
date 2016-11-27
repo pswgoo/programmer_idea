@@ -8,6 +8,8 @@ set (SRCS
 	parser.cpp
 	parser.h
 	instruction.h
+	symbol.cpp
+	symbol.h
 )
 
 add_source_groups(${SRCS})

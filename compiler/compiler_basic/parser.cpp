@@ -31,7 +31,7 @@ StmtNodePtr Compiler::Parse() {
 void Compiler::ParseFuncDef1(const Type* type, const std::string &name) {
 	lexer_.Consume(OP_LEFT_PARENTHESIS);
 
-	ScopePtr function_scope(new Scope(current_scope_));
+	LocalScopePtr function_scope(new LocalScope(current_scope_));
 	Scope* last_scope = current_scope_;
 	current_scope_ = function_scope.get();
 	vector<const Type*> param_types;
@@ -255,7 +255,8 @@ ExprNodePtr Compiler::ParseE8R(ExprNodePtr &&inherit) {
 	if (op_type == OP_ADD || op_type == OP_MINUS) {
 		lexer_.ToNext();
 		ExprNodePtr ptr_expr = ParseE9();
-		ExprNodePtr left_expr(new BinaryOpNode(op_type, Type::Max(inherit->type_, ptr_expr->type_, true), move(inherit), move(ptr_expr)));
+		const Type* ptr_type = Type::Max(inherit->type_, ptr_expr->type_, true);
+		ExprNodePtr left_expr(new BinaryOpNode(op_type, ptr_type, move(inherit), move(ptr_expr)));
 		return ParseE8R(move(left_expr));
 	}
 	return move(inherit);
@@ -317,11 +318,11 @@ ExprNodePtr Compiler::ParseE11() {
 		assert(symbol && (lexer_.Current().value_ + " not defined").c_str());
 		if (const ImmediateSymbol* immediate = dynamic_cast<const ImmediateSymbol*>(symbol)) {
 			lexer_.ToNext();
-			return ExprNodePtr(new ImmediateNode(IDENTIFIER, immediate->type_, immediate->literal_symbol_->value_));
+			return ExprNodePtr(new ImmediateNode(IDENTIFIER, immediate->type_, immediate->literal_symbol_));
 		}
 		else if (const VariableSymbol* var = dynamic_cast<const VariableSymbol*>(symbol)) {
 			lexer_.ToNext();
-			return ParseArray(ExprNodePtr(new VariableNode(IDENTIFIER, var->type_, var->name(), nullptr)));
+			return ParseArray(ExprNodePtr(new VariableNode(IDENTIFIER, var->type_, var)));
 		}
 		else if (symbol->Is<FunctionSymbol>()) {
 			return ParseCall();
@@ -355,21 +356,26 @@ CallNodePtr Compiler::ParseCall() {
 			param_match = false;
 			assert(0 && "Function paramater not compatible!");
 		}
-			
-	return CallNodePtr(new CallNode(NT_CALL, func_type->ret_type_, current_scope_, func_name, move(params)));
+
+	return CallNodePtr(new CallNode(NT_CALL, func_type->ret_type_, func_symbol, func_name, move(params)));
 }
 
 ImmediateNodePtr Compiler::ParseLiteralValue() {
 	TokenType type = lexer_.Current().type_;
+	const Symbol* symbol;
 	switch (type) {
 	case BOOLEAN:
-		return ImmediateNodePtr(new ImmediateNode(type, GetType("bool"), lexer_.GoNext().value_));
+		symbol = global_scope_->Put(LiteralSymbolPtr(new LiteralSymbol(GetType("bool"), lexer_.GoNext().value_)));
+		break;
 	case CHAR:
-		return ImmediateNodePtr(new ImmediateNode(type, GetType("char"), lexer_.GoNext().value_));
+		symbol = global_scope_->Put(LiteralSymbolPtr(new LiteralSymbol(GetType("char"), lexer_.GoNext().value_)));
+		break;
 	case INTEGER:
-		return ImmediateNodePtr(new ImmediateNode(type, GetType("int"), lexer_.GoNext().value_));
+		symbol = global_scope_->Put(LiteralSymbolPtr(new LiteralSymbol(GetType("int"), lexer_.GoNext().value_)));
+		break;
 	case REAL:
-		return ImmediateNodePtr(new ImmediateNode(type, GetType("double"), lexer_.GoNext().value_));
+		symbol = global_scope_->Put(LiteralSymbolPtr(new LiteralSymbol(GetType("double"), lexer_.GoNext().value_)));
+		break;
 	/*case STRING:
 		return ImmediateNodePtr(new ImmediateNode(type, GetType("string"), lexer_.GoNext().value_));*/
 	/*case NULL_REF:
@@ -377,7 +383,7 @@ ImmediateNodePtr Compiler::ParseLiteralValue() {
 	default:
 		break;
 	}
-	return nullptr;
+	return ImmediateNodePtr(new ImmediateNode(type, symbol->To<LiteralSymbol>()->type_, symbol->To<LiteralSymbol>()));
 }
 
 ExprNodePtr Compiler::ParseArray(ExprNodePtr &&inherit) {
@@ -413,6 +419,24 @@ int64_t Compiler::ParseConstInt() {
 	}
 	assert(0 && "ParseConstInt failed!");
 	return 0;
+}
+
+void Compiler::Interpret() {
+	for (int i = 0; i < all_functions_.size(); ++i)
+		Interpret(all_functions_[i]->body_.get(), all_functions_[i]->scope_.get());
+}
+
+void Compiler::Interpret(AstNode* node, LocalScope* local_scope) {
+	switch (node->token_type_) {
+		case TokenType::OP_ASSIGN:
+		case TokenType::OP_ADD_ASSIGN:
+		case TokenType::OP_MINUS_ASSIGN:
+		case TokenType::OP_PRODUCT_ASSIGN:
+		case TokenType::OP_DIVIDE_ASSIGN:
+		case TokenType::OP_MOD_ASSIGN: {
+		//	right_expr
+		}
+	}
 }
 
 } // namespace pswgoo

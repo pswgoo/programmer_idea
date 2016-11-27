@@ -106,8 +106,10 @@ struct Instruction {
 		kStoreR,
 	};
 
+	Instruction(Opcode op, int64_t param) : op_(op), param_(param) {}
+
 	Opcode op_;
-	int64_t param;
+	int64_t param_;
 };
 
 } // namespace pswgoo
