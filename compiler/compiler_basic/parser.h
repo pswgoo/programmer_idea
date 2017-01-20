@@ -211,8 +211,8 @@ public:
 
 	void Parse(const std::string& program);
 
-	void Interpret();
-	void Interpret(AstNode* node, LocalScope* local_scope);
+	void Gen();
+	void Gen(AstNode* node, FunctionSymbol* function, LocalScope* local_scope);
 
 	virtual void Print(std::ostream& oa, const std::string& padding) const override {
 		for (const FunctionSymbol* func : all_functions_) {

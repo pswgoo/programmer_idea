@@ -420,12 +420,12 @@ int64_t Compiler::ParseConstInt() {
 	return 0;
 }
 
-void Compiler::Interpret() {
+void Compiler::Gen() {
 	for (int i = 0; i < all_functions_.size(); ++i)
-		Interpret(all_functions_[i]->body_.get(), all_functions_[i]->scope_.get());
+		Gen(all_functions_[i]->body_.get(), all_functions_[i]->scope_.get());
 }
 
-void Compiler::Interpret(AstNode* node, LocalScope* local_scope) {
+void Compiler::Gen(AstNode* node, FunctionSymbol* function, LocalScope* local_scope) {
 	switch (node->token_type_) {
 		case TokenType::OP_ASSIGN:
 		case TokenType::OP_ADD_ASSIGN:
@@ -434,6 +434,9 @@ void Compiler::Interpret(AstNode* node, LocalScope* local_scope) {
 		case TokenType::OP_DIVIDE_ASSIGN:
 		case TokenType::OP_MOD_ASSIGN: {
 		//	right_expr
+			Gen(node->To<AssignNode>->right_expr_, function, local_scope);
+			Gen(node->To<AssignNode>->left_expr_, function, local_scope);
+			//function->add_code()
 		}
 	}
 }

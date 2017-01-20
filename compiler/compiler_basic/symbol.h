@@ -45,7 +45,7 @@ public:
 
 	std::string name_;
 	int64_t index_ = 0; // for global scope, it is const symbol table index; for local scope, it is local variable index.
-	int64_t local_offset_ = 0;
+	int64_t local_offset_ = -1; // it must be a positive number if it is a local variable, otherwise it is -1.
 };
 typedef std::unique_ptr<Symbol> SymbolPtr;
 
