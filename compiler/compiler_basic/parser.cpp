@@ -105,13 +105,12 @@ const VariableSymbol* Compiler::ParseDecl() {
 			dims.push_back(ParseConstInt());
 			lexer_.Consume(OP_RIGHT_BRACKET);
 		}
+		const Type* element_type = type;
 		for (int i = (int)dims.size() - 1; i >= 0; --i) {
-			TypePtr array_type(ArrayPtr(new Array(type, dims[i], type->parent_scope_)));
-			type = dynamic_cast<const Type*>(type->parent_scope_->Put(move(array_type)));
-		}
-		if (dims.size() > 0) {
-			TypePtr ref_array(ReferencePtr(new Reference(type, type->parent_scope_)));
-			type = dynamic_cast<const Type*>(type->parent_scope_->Put(move(ref_array)));
+			TypePtr array_type(ArrayPtr(new Array(element_type, dims[i], element_type->parent_scope_)));
+			element_type = dynamic_cast<const Type*>(element_type->parent_scope_->Put(move(array_type)));
+			TypePtr ref_array(ReferencePtr(new Reference(element_type, element_type->parent_scope_)));
+			type = element_type->parent_scope_->Put(move(ref_array))->To<Type>();
 		}
 		if (const Symbol* sym = current_scope_->GetCurrent(var))
 			if (const VariableSymbol* ptr_var = dynamic_cast<const VariableSymbol*>(sym))

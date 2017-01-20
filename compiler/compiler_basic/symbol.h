@@ -39,18 +39,19 @@ public:
 	Symbol() = default;
 	Symbol(const std::string& name) : name_(name) {}
 
-	const std::string& name()const { return name_; }
+	const std::string& name() const { return name_; }
 
 	friend class Scope;
 
 	std::string name_;
-	int64_t index_; // for global scope, it is const symbol table index; for local scope, it is local stack index.
+	int64_t index_ = 0; // for global scope, it is const symbol table index; for local scope, it is local variable index.
+	int64_t local_offset_ = 0;
 };
 typedef std::unique_ptr<Symbol> SymbolPtr;
 
 class Type : public Symbol {
 public:
-	enum TypeId { kBool, kChar, kInt, kLong, kFloat, kDouble, kReference, kPrimitiveType, kArray, kFunction, kClass };
+	enum TypeId { kBool, kChar, kInt, kLong, kFloat, kDouble, kPrimitiveType, kReference, kArray, kFunction, kClass };
 	Type(TypeId type_id) : type_id_(type_id) {}
 	Type(const std::string& name, TypeId type_id, Scope* parent_scope) : Symbol(name), type_id_(type_id), parent_scope_(parent_scope) {}
 
@@ -66,6 +67,8 @@ public:
 	// @return type size in bytes
 	virtual int64_t SizeOf() const = 0;
 	virtual bool CouldPromoteTo(const Type* target_type) const {
+		if (this == target_type)
+			return true;
 		if (target_type->type_id_ < kPrimitiveType && type_id_ == target_type->type_id_)
 			return true;
 		if (target_type->type_id_ < kPrimitiveType && type_id_ >= kChar && type_id_ <= target_type->type_id_)
@@ -114,7 +117,6 @@ public:
 	const Scope* parent() const { return parent_; }
 	int depth() const { return depth_; }
 
-
 protected:
 	const Scope* parent_ = nullptr;
 	int depth_ = 0;
@@ -126,14 +128,16 @@ typedef std::unique_ptr<Scope> ScopePtr;
 class VariableSymbol : public Symbol {
 public:
 	VariableSymbol(const std::string& name, const Type* type) : Symbol(name), type_(type) {}
-	const Type* type_; // must be PrimaryType
+	const Type* type_; // must be PrimaryType or Reference
 };
 
 class LocalScope : public Scope {
 public:
 	LocalScope(const Scope* parent) : Scope(parent), stack_start_(0), max_stack_size_(0) {
-		if (parent_->Is<LocalScope>())
-			top_ = stack_start_ = parent->To<LocalScope>()->stack_start_;
+		if (parent_->Is<LocalScope>()) {
+			stack_top_ = stack_start_ = parent->To<LocalScope>()->stack_top_;
+			top_ = parent->To<LocalScope>()->top_;
+		}
 	}
 
 	const Symbol* Put(SymbolPtr&& symbol_ptr) override {
@@ -141,19 +145,23 @@ public:
 		if (!ptr) {
 			ptr = std::move(symbol_ptr);
 			if (ptr->Is<VariableSymbol>()) {
-				ptr->index_ = top_;
-				top_ += ptr->To<VariableSymbol>()->type_->SizeOf();
+				ptr->index_ = top_++;
+				ptr->local_offset_ = stack_top_;
+				stack_top_ += ptr->To<VariableSymbol>()->type_->SizeOf();
 			}
 		}
 		return ptr.get();
 	}
+	// cannot parallel
 	void add_child_scope(std::unique_ptr<LocalScope>&& child_scope) {
 		max_stack_size_ = std::max(max_stack_size_, top_ - stack_start_ + child_scope->max_stack_size_);
+		top_ = child_scope->top_;
 		child_scopes_.emplace_back(std::move(child_scope));
 	}
 
 protected:
 	int64_t stack_start_;
+	int64_t stack_top_;
 	int64_t max_stack_size_;
 	std::vector<std::unique_ptr<LocalScope>> child_scopes_;
 };
@@ -242,15 +250,23 @@ typedef std::unique_ptr<Array> ArrayPtr;
 
 class Reference : public Type {
 public:
-	Reference(const Type* target_type, Scope* parent_scope) :
-		Type("ref@" + target_type->name(), kReference, parent_scope), target_type_(target_type) {}
+	Reference(const Type* ref_type, Scope* parent_scope) :
+		Type("ref@" + ref_type->name(), kReference, parent_scope), ref_type_(ref_type) {}
 	virtual int64_t SizeOf() const override { return 8; }
 	template<typename T>
 	const T* Get() const {
-		return dynamic_cast<const T*>(target_type_);
+		return dynamic_cast<const T*>(ref_type_);
 	}
 
-	const Type* target_type_;
+	virtual bool CouldPromoteTo(const Type* target_type) const override {
+		if (this == target_type)
+			return true;
+		if (ref_type_->CouldPromoteTo(target_type) || (target_type->Is<Reference>() && ref_type_->CouldPromoteTo(target_type->To<Reference>()->ref_type_)))
+			return true;
+		return false;
+	};
+
+	const Type* ref_type_;
 };
 typedef std::unique_ptr<Reference> ReferencePtr;
 

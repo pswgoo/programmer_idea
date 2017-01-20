@@ -6,7 +6,7 @@ add/sub/mul/div/mod - char/int/long/float/double
 eq,lt,gt,le,ge,nt,ne - char/int/long/float/double
 call: const_table
 goto
-iftrue
+iffalse
 
 print
 
@@ -23,7 +23,7 @@ FieldSize：非静态存储区大小（byte）
 
 1.ConstPool部分:
 
-ConstPool: vector<ConstPoolNodee>
+ConstPool: vector<ConstPoolNode>
 
 struct ConstPoolNode {
 	int NodeType;
@@ -51,12 +51,12 @@ Function：
 函数名（签名）
 返回类型
 参数个数
-局部变量类型列表（函数参数列表类型排前面）(应该只需要用每个类型的字节长度就可以了)
-Code
+局部变量类型列表（函数参数列表类型排前面）变量类型，引用的话可能需要用常量表的下标，表示引用什么类型
+Code // 代码中，局部变量应该也只需要用局部变量下标引用就行。
 
 Field:
 FieldName
-offset
+offset // 应该用下标？表示第几个field成员
 DataType
 
 PrimarayType:

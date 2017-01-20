@@ -43,6 +43,6 @@ int main() {
 	}
 
 	clog << "Complete" << endl;
-	system("pause");
+
 	return 0;
 }
