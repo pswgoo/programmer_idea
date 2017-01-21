@@ -1,5 +1,8 @@
 #include "parser.h"
 
+#include "symbol.h"
+#include "instruction.h"
+
 using namespace std;
 
 namespace pswgoo {
@@ -156,7 +159,9 @@ ExprNodePtr Compiler::ParseE1R(ExprNodePtr &&inherit) {
 	if (op_type == OP_LOGICAL_OR) {
 		lexer_.ToNext();
 		ExprNodePtr ptr_expr = ParseE2();
-		ExprNodePtr left_expr(new BinaryOpNode(op_type, GetType("bool"), move(inherit), move(ptr_expr)));
+		const Type* bool_type = GetType("bool");
+		assert(inherit->type_->CouldPromoteTo(bool_type) && ptr_expr->type_->CouldPromoteTo(bool_type) && "cannot convert to bool");
+		ExprNodePtr left_expr(new BinaryOpNode(op_type, bool_type, move(inherit), move(ptr_expr)));
 		return ParseE1R(move(left_expr));
 	}
 	return move(inherit);
@@ -170,7 +175,9 @@ ExprNodePtr Compiler::ParseE2R(ExprNodePtr &&inherit) {
 	if (op_type == OP_LOGICAL_AND) {
 		lexer_.ToNext();
 		ExprNodePtr ptr_expr = ParseE3();
-		ExprNodePtr left_expr(new BinaryOpNode(op_type, GetType("bool"), move(inherit), move(ptr_expr)));
+		const Type* bool_type = GetType("bool");
+		assert(inherit->type_->CouldPromoteTo(bool_type) && ptr_expr->type_->CouldPromoteTo(bool_type) && "cannot convert to bool");
+		ExprNodePtr left_expr(new BinaryOpNode(op_type, bool_type, move(inherit), move(ptr_expr)));
 		return ParseE2R(move(left_expr));
 	}
 	return move(inherit);
@@ -285,8 +292,11 @@ ExprNodePtr Compiler::ParseE10() {
 		lexer_.ToNext();
 		ExprNodePtr ptr_expr = ParseE11();
 		const Type* type = ptr_expr->type_;
-		if (op_type == OP_LOGICAL_NOT)
+		if (op_type == OP_LOGICAL_NOT) {
 			type = GetType("bool");
+			assert(ptr_expr->type_->CouldPromoteTo(type) && "cannot convert to bool");
+		}
+
 		return ExprNodePtr(new UnaryOpNode(op_type, type, move(ptr_expr)));
 	}
 	default:
@@ -314,7 +324,7 @@ ExprNodePtr Compiler::ParseE11() {
 	}
 	else if (cur_type == IDENTIFIER) {
 		const Symbol* symbol = current_scope_->Get(lexer_.Current().value_);
-		assert(symbol && (lexer_.Current().value_ + " not defined").c_str());
+		assert(symbol && "symbol not defined");
 		if (const ImmediateSymbol* immediate = dynamic_cast<const ImmediateSymbol*>(symbol)) {
 			lexer_.ToNext();
 			return ExprNodePtr(new ImmediateNode(IDENTIFIER, immediate->type_, immediate->literal_symbol_));
@@ -370,15 +380,21 @@ ImmediateNodePtr Compiler::ParseLiteralValue() {
 		symbol = global_scope_->Put(LiteralSymbolPtr(new LiteralSymbol(GetType("char"), lexer_.GoNext().value_)));
 		break;
 	case INTEGER:
-		symbol = global_scope_->Put(LiteralSymbolPtr(new LiteralSymbol(GetType("int"), lexer_.GoNext().value_)));
+		symbol = global_scope_->Put(LiteralSymbolPtr(new LiteralSymbol(GetType("long"), lexer_.GoNext().value_)));
 		break;
 	case REAL:
 		symbol = global_scope_->Put(LiteralSymbolPtr(new LiteralSymbol(GetType("double"), lexer_.GoNext().value_)));
 		break;
-	/*case STRING:
-		return ImmediateNodePtr(new ImmediateNode(type, GetType("string"), lexer_.GoNext().value_));*/
+	case STRING: {
+		const Char* ptr_char_type = GetType("char")->To<Char>();
+		Scope* ptr_scope = ptr_char_type->parent_scope_;
+		ArrayPtr ptr_array_type(new Array(ptr_char_type, (int64_t)lexer_.Current().value_.size(), ptr_scope));
+		StringPtr ptr_string_type(new String(ptr_scope->Put(move(ptr_array_type))->To<Array>(), ptr_scope));
+		symbol = global_scope_->Put(LiteralSymbolPtr(new LiteralSymbol(ptr_scope->Put(move(ptr_string_type))->To<Type>(), lexer_.GoNext().value_)));
+		break;
+	}
 	/*case NULL_REF:
-		return ImmediateNodePtr(new ImmediateNode(type, GetType("ref_void"), lexer_.GoNext().value_));*/
+			return ImmediateNodePtr(new ImmediateNode(type, GetType("ref_void"), lexer_.GoNext().value_));*/
 	default:
 		break;
 	}
@@ -422,23 +438,184 @@ int64_t Compiler::ParseConstInt() {
 
 void Compiler::Gen() {
 	for (int i = 0; i < all_functions_.size(); ++i)
-		Gen(all_functions_[i]->body_.get(), all_functions_[i]->scope_.get());
+		all_functions_[i]->body_->Gen(all_functions_[i], all_functions_[i]->scope_.get());
 }
 
-void Compiler::Gen(AstNode* node, FunctionSymbol* function, LocalScope* local_scope) {
-	switch (node->token_type_) {
-		case TokenType::OP_ASSIGN:
-		case TokenType::OP_ADD_ASSIGN:
-		case TokenType::OP_MINUS_ASSIGN:
-		case TokenType::OP_PRODUCT_ASSIGN:
-		case TokenType::OP_DIVIDE_ASSIGN:
-		case TokenType::OP_MOD_ASSIGN: {
-		//	right_expr
-			Gen(node->To<AssignNode>->right_expr_, function, local_scope);
-			Gen(node->To<AssignNode>->left_expr_, function, local_scope);
-			//function->add_code()
+void ImmediateNode::Gen(FunctionSymbol* function, LocalScope* local_scope) const {
+	switch (symbol_->type_->type_id_) {
+	case Type::kBool:
+		function->add_code(Instruction::kPutC, symbol_->value_ == "true");
+		break;
+	case Type::kChar:
+		function->add_code(Instruction::kPutC, symbol_->value_.front());
+		break;
+	case Type::kLong:
+		function->add_code(Instruction::kPutL, stoll(symbol_->value_));
+		break;
+	case Type::kDouble:
+		function->add_code(Instruction::kPutD, stoll(symbol_->value_));
+		break;
+	case Type::kString:
+		function->add_code(Instruction::kLdc, symbol_->index_);
+	default:
+		break;
+	}
+}
+
+void VariableNode::Gen(FunctionSymbol* function, LocalScope* local_scope) const {
+	if (symbol_->local_offset_ < 0) // it is a global static variable
+		function->add_code(Instruction::kGetStatic, symbol_->index_);
+	else
+		switch (symbol_->type_->type_id_) {
+		case Type::kBool:
+		case Type::kChar:
+			function->add_code(Instruction::kLoadC, symbol_->local_offset_);
+			break;
+		case Type::kLong:
+			function->add_code(Instruction::kLoadL, symbol_->local_offset_);
+			break;
+		case Type::kDouble:
+			function->add_code(Instruction::kLoadD, symbol_->local_offset_);
+			break;
+		case Type::kString:
+		case Type::kReference:
+			function->add_code(Instruction::kLoadR, symbol_->local_offset_);
+			break;
+		default:
+			break;
+		}
+}
+
+void AssignNode::Gen(FunctionSymbol* function, LocalScope* local_scope) const {
+	right_expr_->Gen(function, local_scope);
+	Type::TypeId type_id = left_var_->type_->type_id_;
+	if (left_var_->token_type_ == NT_ARRAY) {
+		left_var_->Gen(function, local_scope);
+		if (type_id == Type::kBool || type_id == Type::kChar)
+			function->add_code(Instruction::kAStoreC);
+		else if (type_id == Type::kLong)
+			function->add_code(Instruction::kAStoreL);
+		else if (type_id == Type::kDouble)
+			function->add_code(Instruction::kAStoreD);
+		else if (type_id == Type::kReference)
+			function->add_code(Instruction::kAStoreR);
+		else
+			assert("array type error!");
+	}
+	else {
+		const VariableSymbol* symbol = left_var_->To<VariableNode>()->symbol_;
+		// global static variable
+		if (symbol->local_offset_ < 0)
+			function->add_code(Instruction::kStoreStatic, symbol->index_);
+		else {
+			if (type_id == Type::kBool || type_id == Type::kChar)
+				function->add_code(Instruction::kStoreC, symbol->local_offset_);
+			else if (type_id == Type::kLong)
+				function->add_code(Instruction::kStoreL, symbol->local_offset_);
+			else if (type_id == Type::kDouble)
+				function->add_code(Instruction::kStoreD, symbol->local_offset_);
+			else if (type_id == Type::kReference)
+				function->add_code(Instruction::kStoreR, symbol->local_offset_);
+			else
+				assert("variable type error!");
 		}
 	}
+}
+
+void BinaryOpNode::Gen(FunctionSymbol* function, LocalScope* local_scope) const {
+	left_expr_->Gen(function, local_scope);
+	const Type* common_type = Type::Max(left_expr_->type_, right_expr_->type_);
+	if (type_->name() == "bool")
+		common_type = type_;
+	if (left_expr_->type_ != type_)
+		function->add_code(Type::GetConvertOpcode(left_expr_->type_, common_type));
+	right_expr_->Gen(function, local_scope);
+	if (right_expr_->type_ != type_)
+		function->add_code(Type::GetConvertOpcode(right_expr_->type_, common_type));
+	int type_id = common_type->type_id_;
+	switch (token_type_) {
+	case pswgoo::OP_ADD:
+		if (type_id == Type::kChar)
+			function->add_code(Instruction::kAddC);
+		else if (type_id == Type::kLong)
+			function->add_code(Instruction::kAddL);
+		else if (type_id == Type::kDouble)
+			function->add_code(Instruction::kAddD);
+		break;
+	case pswgoo::OP_MINUS:
+		if (type_id == Type::kChar)
+			function->add_code(Instruction::kSubC);
+		else if (type_id == Type::kLong)
+			function->add_code(Instruction::kSubL);
+		else if (type_id == Type::kDouble)
+			function->add_code(Instruction::kSubD);
+		break;
+	case pswgoo::OP_PRODUCT:
+		if (type_id == Type::kChar)
+			function->add_code(Instruction::kMulC);
+		else if (type_id == Type::kLong)
+			function->add_code(Instruction::kMulL);
+		else if (type_id == Type::kDouble)
+			function->add_code(Instruction::kMulD);
+		break;
+	case pswgoo::OP_DIVIDE:
+		if (type_id == Type::kChar)
+			function->add_code(Instruction::kDivC);
+		else if (type_id == Type::kLong)
+			function->add_code(Instruction::kDivL);
+		else if (type_id == Type::kDouble)
+			function->add_code(Instruction::kDivD);
+		break;
+	case pswgoo::OP_MOD:
+		if (type_id == Type::kChar)
+			function->add_code(Instruction::kModC);
+		else if (type_id == Type::kLong)
+			function->add_code(Instruction::kModL);
+		break;
+	case pswgoo::OP_LOGICAL_AND:
+		function->add_code(Instruction::kAnd);
+		break;
+	case pswgoo::OP_LOGICAL_OR:
+		function->add_code(Instruction::kOr);
+		break;
+	case pswgoo::OP_GREATER:
+	case pswgoo::OP_LESS:
+	case pswgoo::OP_EQUAL:
+	case pswgoo::OP_NOT_EQUAL:
+	case pswgoo::OP_GREATER_EQUAL:
+	case pswgoo::OP_LESS_EQUAL:
+		if (type_id == Type::kChar)
+			function->add_code(Instruction::kCmpC);
+		else if (type_id == Type::kLong)
+			function->add_code(Instruction::kCmpL);
+		else if (type_id == Type::kDouble)
+			function->add_code(Instruction::kCmpD);
+		else
+			assert("cmp type error!");
+		if (token_type_ == OP_GREATER)
+			function->add_code(Instruction::kGt);
+		else if (OP_LESS)
+			function->add_code(Instruction::kLt);
+		else if (OP_EQUAL)
+			function->add_code(Instruction::kEq);
+		else if (OP_NOT_EQUAL)
+			function->add_code(Instruction::kNe);
+		else if (OP_GREATER_EQUAL)
+			function->add_code(Instruction::kGe);
+		else if (OP_LESS_EQUAL)
+			function->add_code(Instruction::kLe);
+		else
+			assert("cmp operator error!");
+		break;
+	default:
+		assert("binary operator not implemented");
+		break;
+	}
+	assert("binary_node gen error, type error!");
+}
+
+void UnaryOpNode::Gen(FunctionSymbol* function, LocalScope* local_scope) const {
+
 }
 
 } // namespace pswgoo

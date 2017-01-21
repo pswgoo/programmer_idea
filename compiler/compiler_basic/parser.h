@@ -20,6 +20,10 @@ struct AstNode : public Object {
 		oa << padding + "{" << kTokenTypeStr[token_type_] << "}" << std::endl;
 	}
 
+	virtual void Gen(FunctionSymbol* function, LocalScope* local_scope) const {
+
+	}
+
 	TokenType token_type_;
 };
 
@@ -46,6 +50,7 @@ struct ImmediateNode : public ExprNode {
 	virtual void Print(std::ostream& oa, const std::string& padding) const override {
 		oa << padding + "{" << "(" << type_->name() << ")" << symbol_->value_ << "}" << std::endl;
 	}
+	virtual void Gen(FunctionSymbol* function, LocalScope* local_scope) const override;
 
 	const LiteralSymbol* symbol_;
 };
@@ -63,6 +68,8 @@ struct VariableNode : public ExprNode {
 		oa << padding + "}" << std::endl;
 	}
 
+	virtual void Gen(FunctionSymbol* function, LocalScope* local_scope) const override;
+
 	const VariableSymbol* symbol_;
 	//ExprNodePtr expr_; // may be nullptr
 };
@@ -79,6 +86,8 @@ struct AssignNode : public ExprNode {
 		oa << padding + "}" << std::endl;
 	}
 
+	virtual void Gen(FunctionSymbol* function, LocalScope* local_scope) const override;
+
 	ExprNodePtr left_var_;
 	ExprNodePtr right_expr_;
 };
@@ -94,6 +103,8 @@ struct BinaryOpNode : public ExprNode {
 		oa << padding + "}" << std::endl;
 	}
 
+	virtual void Gen(FunctionSymbol* function, LocalScope* local_scope) const override;
+
 	ExprNodePtr left_expr_;
 	ExprNodePtr right_expr_;
 };
@@ -107,6 +118,7 @@ struct UnaryOpNode : public ExprNode {
 		expr_->Print(oa, padding + kAstIndent);
 		oa << padding + "}" << std::endl;
 	}
+	virtual void Gen(FunctionSymbol* function, LocalScope* local_scope) const override;
 
 	ExprNodePtr expr_;
 };
@@ -202,9 +214,7 @@ public:
 		// put primitive types to global scope
 		global_scope_->Put(std::unique_ptr<Bool>(new Bool(global_scope_.get())));
 		global_scope_->Put(std::unique_ptr<Char>(new Char(global_scope_.get())));
-		global_scope_->Put(std::unique_ptr<Int>(new Int(global_scope_.get())));
 		global_scope_->Put(std::unique_ptr<Long>(new Long(global_scope_.get())));
-		global_scope_->Put(std::unique_ptr<Float>(new Float(global_scope_.get())));
 		global_scope_->Put(std::unique_ptr<Double>(new Double(global_scope_.get())));
 		current_scope_ = global_scope_.get();
 	}
@@ -285,7 +295,7 @@ private:
 	Lexer lexer_;
 	Scope* current_scope_;
 	ScopePtr global_scope_;
-	std::vector<const FunctionSymbol*> all_functions_;
+	std::vector<FunctionSymbol*> all_functions_;
 };
 
 

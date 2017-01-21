@@ -51,7 +51,7 @@ typedef std::unique_ptr<Symbol> SymbolPtr;
 
 class Type : public Symbol {
 public:
-	enum TypeId { kBool, kChar, kInt, kLong, kFloat, kDouble, kPrimitiveType, kReference, kArray, kFunction, kClass };
+	enum TypeId { kBool, kChar, kLong, kDouble, kPrimitiveType, kReference, kArray, kString, kFunction, kClass };
 	Type(TypeId type_id) : type_id_(type_id) {}
 	Type(const std::string& name, TypeId type_id, Scope* parent_scope) : Symbol(name), type_id_(type_id), parent_scope_(parent_scope) {}
 
@@ -62,6 +62,41 @@ public:
 			return type1;
 		assert(!need_assert && (type1->name() + " and " + type2->name() + " not compatible").c_str());
 		return nullptr;
+	}
+
+	static Instruction::Opcode GetConvertOpcode(const Type* source, const Type* target) {
+		if (source != target)
+			return Instruction::kNonCmd;
+		if (source->type_id_ == kChar || source->type_id_ == kBool) {
+			if (target->type_id_ == kLong)
+				return Instruction::kC2L;
+			else if (target->type_id_ == kDouble)
+				return Instruction::kC2D;
+		}
+		else if (source->type_id_ == kLong) {
+			if (target->type_id_ == kChar || source->type_id_ == kBool)
+				return Instruction::kL2C;
+			else if (target->type_id_ == kDouble)
+				return Instruction::kL2D;
+		}
+		else if (source->type_id_ == kDouble) {
+			if (target->type_id_ == kChar || source->type_id_ == kBool)
+				return Instruction::kD2C;
+			else if (target->type_id_ == kLong)
+				return Instruction::kD2L;
+		}
+		assert("type cannot convert");
+		return Instruction::kNonCmd;
+	}
+	static Instruction::Opcode GetBinaryOpcode(TypeId type_id) {
+		if (type_id == kChar)
+			return Instruction::kAddC;
+		else if (type_id == kLong)
+			return Instruction::kAddL;
+		else if (type_id == kDouble)
+			return Instruction::kAddD;
+		assert("no add opcode for the type");
+		return Instruction::kNonCmd;
 	}
 
 	// @return type size in bytes
@@ -191,7 +226,7 @@ class FunctionSymbol : public ConstSymbol {
 public:
 	FunctionSymbol(const std::string& name, const std::vector<std::string>& param_names, AstNodePtr&& body, LocalScopePtr&& scope, const Type* type) :
 		ConstSymbol(name, type), param_names_(param_names), body_(std::move(body)), scope_(std::move(scope)) {}
-	void add_code(Instruction::Opcode op_code, int64_t param = -1) { code_.emplace_back(Instruction(op_code, param)); }
+	void add_code(Instruction::Opcode op_code, int64_t param = 0) { code_.emplace_back(Instruction(op_code, param)); }
 
 	std::vector<std::string> param_names_;
 	std::vector<Instruction> code_;
@@ -212,22 +247,10 @@ public:
 	virtual int64_t SizeOf() const override { return 1; }
 };
 
-class Int : public Type {
-public:
-	Int(Scope* parent_scope) : Type("int", kInt, parent_scope) {}
-	virtual int64_t SizeOf() const override { return 4; }
-};
-
 class Long : public Type {
 public:
 	Long(Scope* parent_scope) : Type("long", kLong, parent_scope) {}
 	virtual int64_t SizeOf() const override { return 8; }
-};
-
-class Float : public Type {
-public:
-	Float(Scope* parent_scope) : Type("float", kFloat, parent_scope) {}
-	virtual int64_t SizeOf() const override { return 4; }
 };
 
 class Double : public Type {
@@ -269,6 +292,17 @@ public:
 	const Type* ref_type_;
 };
 typedef std::unique_ptr<Reference> ReferencePtr;
+
+class String : public Reference {
+public:
+	String(const Array* type, Scope* parent_scope) :
+		Reference(type, parent_scope) {
+		assert(type->element_type_->type_id_ == kChar && "String is not char array");
+
+		type_id_ = kString;
+	}
+};
+typedef std::unique_ptr<String> StringPtr;
 
 class Function : public Type {
 public:
