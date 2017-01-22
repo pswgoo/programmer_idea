@@ -28,7 +28,7 @@ int main() {
 	
 	int e[10][50][30];
 	e[2][1][3] = 342;
-	b = e[2][1][3] + d;
+	b = e[2][1][add(d, c)] + d;
 }
 
 	)DELIM";
@@ -36,8 +36,11 @@ int main() {
 	try {
 		Compiler parser;
 		parser.Parse(test_str);
+		parser.Gen();
 		ofstream fout("ast.txt");
 		parser.Print(fout,"");
+		//ofstream fout2("ast2.txt");
+
 	} catch (exception e) {
 		cerr << e.what() << endl;
 	}

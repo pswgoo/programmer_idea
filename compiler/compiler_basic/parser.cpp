@@ -40,13 +40,13 @@ void Compiler::ParseFuncDef1(const Type* type, const std::string &name) {
 	current_scope_ = function_scope.get();
 	vector<const Type*> param_types;
 	vector<string> param_names;
-	pair<int, Scope*> type_scope_(type->parent_scope_->depth(), type->parent_scope_);
+	pair<int, Scope*> type_scope(type->parent_scope_->depth(), type->parent_scope_);
 	while (lexer_.Current().type_ != OP_RIGHT_PARENTHESIS) {
 		const VariableSymbol* var_symbol = ParseDecl();
 		param_names.emplace_back(var_symbol->name());
 		param_types.emplace_back(var_symbol->type_);
-		if (type_scope_.first < var_symbol->type_->parent_scope_->depth())
-			type_scope_ = { var_symbol->type_->parent_scope_->depth(), var_symbol->type_->parent_scope_ };
+		if (type_scope.first < var_symbol->type_->parent_scope_->depth())
+			type_scope = { var_symbol->type_->parent_scope_->depth(), var_symbol->type_->parent_scope_ };
 		if (lexer_.Current().type_ == OP_COMMA)
 			lexer_.ToNext();
 		else if (lexer_.Current().type_ == OP_RIGHT_PARENTHESIS)
@@ -55,7 +55,7 @@ void Compiler::ParseFuncDef1(const Type* type, const std::string &name) {
 			assert(0 && "Function def paramaters not match!");
 	}
 	lexer_.Consume(OP_RIGHT_PARENTHESIS);
-	const Type* function_type = (const Type*)type_scope_.second->Put(unique_ptr<Function>(new Function(type, param_types)));
+	const Type* function_type = (const Type*)type_scope.second->Put(unique_ptr<Function>(new Function(type, param_types)));
 	FunctionSymbolPtr func_ptr(new FunctionSymbol(name, param_names, nullptr, move(function_scope), function_type));
 	// left_func_ptr used to change function body.
 	FunctionSymbol* left_func_ptr = func_ptr.get();
@@ -119,8 +119,8 @@ const VariableSymbol* Compiler::ParseDecl() {
 		if (const Symbol* sym = current_scope_->GetCurrent(var))
 			if (const VariableSymbol* ptr_var = dynamic_cast<const VariableSymbol*>(sym))
 				assert(ptr_var->type_ == type && "Declare not consistence!");
-		const Symbol*symbol = current_scope_->Put(unique_ptr<VariableSymbol>(new VariableSymbol(var, type)));
-		return dynamic_cast<const VariableSymbol*>(symbol);
+		const Symbol*symbol = current_scope_->Put(VariableSymbolPtr(new VariableSymbol(var, type)));
+		return symbol->To<VariableSymbol>();
 	}
 	else// if (lexer_.Current().type_ == OP_LOGICAL_AND)
 		assert(0 && "Declare reference not implement!");
@@ -332,7 +332,7 @@ ExprNodePtr Compiler::ParseE11() {
 		}
 		else if (const VariableSymbol* var = dynamic_cast<const VariableSymbol*>(symbol)) {
 			lexer_.ToNext();
-			return ParseArray(ExprNodePtr(new VariableNode(IDENTIFIER, var->type_, var)));
+			return ParseArray(VariableNodePtr(new VariableNode(IDENTIFIER, var->type_, var)));
 		}
 		else if (symbol->Is<FunctionSymbol>()) {
 			return ParseCall();
@@ -402,22 +402,22 @@ ImmediateNodePtr Compiler::ParseLiteralValue() {
 	return ImmediateNodePtr(new ImmediateNode(type, symbol->To<LiteralSymbol>()->type_, symbol->To<LiteralSymbol>()));
 }
 
-ExprNodePtr Compiler::ParseArray(ExprNodePtr &&inherit) {
-	ExprNodePtr ret(move(inherit));
+ExprNodePtr Compiler::ParseArray(VariableNodePtr &&inherit) {
+	if (lexer_.Current().type_ != OP_LEFT_BRACKET)
+		return move(inherit);
+	const VariableSymbol* ref = inherit->symbol_;
+	assert(ref->type_->To<Reference>() != nullptr && "array must be reference type");
+	vector<ExprNodePtr> exprs;
+	const Type* ret_type = ref->type_->To<Reference>()->ref_type_;
 	while (lexer_.Current().type_ == OP_LEFT_BRACKET) {
 		lexer_.Consume(OP_LEFT_BRACKET);
 		ExprNodePtr expr = ParseExpr();
 		lexer_.Consume(OP_RIGHT_BRACKET);
+		exprs.emplace_back(move(expr));
 
-		const Type* type = nullptr;
-		if (const Reference* ref_type = dynamic_cast<const Reference*>(ret->type_))
-			type = ref_type->Get<Array>()->element_type_;
-		else
-			type = dynamic_cast<const Array*>(ret->type_)->element_type_;
-		ArrayNodePtr arr(new ArrayNode(NT_ARRAY, type, move(ret), move(expr)));
-		ret = move(arr);
+		ret_type = ret_type->To<Array>()->element_type_;
 	}
-	return move(ret);
+	return ArrayNodePtr(new ArrayNode(NT_ARRAY, ret_type, ref, move(exprs)));
 }
 
 int64_t Compiler::ParseConstInt() {
@@ -442,7 +442,7 @@ void Compiler::Gen() {
 		all_functions_[i]->body_->Gen(all_functions_[i], all_functions_[i]->scope_.get());
 }
 
-void ImmediateNode::Gen(FunctionSymbol* function, LocalScope* local_scope) const {
+void ImmediateNode::Gen(FunctionSymbol* function, LocalScope* local_scope, bool right_value) const {
 	switch (symbol_->type_->type_id_) {
 	case Type::kBool:
 		function->add_code(Instruction::kPutC, symbol_->value_ == "true");
@@ -463,7 +463,7 @@ void ImmediateNode::Gen(FunctionSymbol* function, LocalScope* local_scope) const
 	}
 }
 
-void VariableNode::Gen(FunctionSymbol* function, LocalScope* local_scope) const {
+void VariableNode::Gen(FunctionSymbol* function, LocalScope* local_scope, bool right_value) const {
 	if (symbol_->local_offset_ < 0) // it is a global static variable
 		function->add_code(Instruction::kGetStatic, symbol_->index_);
 	else
@@ -487,11 +487,11 @@ void VariableNode::Gen(FunctionSymbol* function, LocalScope* local_scope) const 
 		}
 }
 
-void AssignNode::Gen(FunctionSymbol* function, LocalScope* local_scope) const {
+void AssignNode::Gen(FunctionSymbol* function, LocalScope* local_scope, bool right_value) const {
 	right_expr_->Gen(function, local_scope);
 	Type::TypeId type_id = left_var_->type_->type_id_;
 	if (left_var_->token_type_ == NT_ARRAY) {
-		left_var_->Gen(function, local_scope);
+		left_var_->Gen(function, local_scope, false);
 		if (type_id == Type::kBool || type_id == Type::kChar)
 			function->add_code(Instruction::kAStoreC);
 		else if (type_id == Type::kInt)
@@ -523,7 +523,7 @@ void AssignNode::Gen(FunctionSymbol* function, LocalScope* local_scope) const {
 	}
 }
 
-void BinaryOpNode::Gen(FunctionSymbol* function, LocalScope* local_scope) const {
+void BinaryOpNode::Gen(FunctionSymbol* function, LocalScope* local_scope, bool right_value) const {
 	left_expr_->Gen(function, local_scope);
 	const Type* common_type = Type::Max(left_expr_->type_, right_expr_->type_);
 	if (type_->Is<Bool>())
@@ -613,15 +613,16 @@ void BinaryOpNode::Gen(FunctionSymbol* function, LocalScope* local_scope) const 
 	assert("binary_node gen error, type error!");
 }
 
-void UnaryOpNode::Gen(FunctionSymbol* function, LocalScope* local_scope) const {
+void UnaryOpNode::Gen(FunctionSymbol* function, LocalScope* local_scope, bool right_value) const {
 	expr_->Gen(function, local_scope);
 	switch (token_type_) {
 	case pswgoo::NT_TYPE_CAST: {
 		Instruction::Opcode op = Type::GetConvertOpcode(expr_->type_, type_);
+		//std::clog << "Gen TYPE CAST, " << expr_->type_->name() << " <  " << type_->name() << " " << kInstructionStr[op] << std::endl;
 		if (op != Instruction::kNonCmd)
 			function->add_code(op);
-		else if (expr_->type_ != type_)
-			assert("no matched type cast opcode");
+		else 
+			assert(expr_->type_ == type_ && "no matched type cast opcode");
 		return;
 	}
 	case pswgoo::OP_ADD:
@@ -644,8 +645,50 @@ void UnaryOpNode::Gen(FunctionSymbol* function, LocalScope* local_scope) const {
 	};
 }
 
-void ArrayNode::Gen(FunctionSymbol* function, LocalScope* local_scope) const {
+void ArrayNode::Gen(FunctionSymbol* function, LocalScope* local_scope, bool right_value) const {
+	const Type* type = ref_->type_->To<Reference>()->ref_type_;
+	int64_t unit_element_size = type->To<Array>()->UnitSize();
+	function->add_code(Instruction::kPutI, 0);	// put base index 0.
+	for (int i = 0; i < indices_.size(); ++i) {
+		indices_[i]->Gen(function, local_scope);
+		if (indices_[i]->type_->type_id_ != Type::kInt) {
+			Instruction::Opcode op = Type::GetConvertOpcode(indices_[i]->type_, local_scope->Get("int")->To<Type>());
+			assert(op != Instruction::kNonCmd && "array index cannot convert to int");
+			function->add_code(op);
+		}
+		function->add_code(Instruction::kPutI, type->To<Array>()->element_type_->SizeOf() / unit_element_size);
+		function->add_code(Instruction::kMulI);
+		function->add_code(Instruction::kAddI);
+		type = type->To<Array>()->element_type_;
+	}
+	if (ref_->local_offset_ < 0)
+		function->add_code(Instruction::kGetStatic, ref_->index_);
+	else
+		function->add_code(Instruction::kLoadR, ref_->local_offset_);
+	if (right_value) {
+		Type::TypeId type_id = type_->type_id_;
+		if (type_id == Type::kBool || type_id == Type::kChar)
+			function->add_code(Instruction::kALoadC);
+		else if (type_id == Type::kInt)
+			function->add_code(Instruction::kALoadI);
+		else if (type_id == Type::kDouble)
+			function->add_code(Instruction::kALoadD);
+		else if (type_id == Type::kReference)
+			function->add_code(Instruction::kALoadR);
+		else
+			assert("array dereference type error!");
+	}
+}
 
+void CallNode::Gen(FunctionSymbol* function, LocalScope* local_scope, bool right_value) const {
+	for (int i = 0; i < params_.size(); ++i)
+		params_[i]->Gen(function, local_scope);
+	function->add_code(Instruction::kCall, function_->index_);
+}
+
+void StmtBlockNode::Gen(FunctionSymbol* function, LocalScope* local_scope, bool right_value) const {
+	for (int i = 0; i < stmts_.size(); ++i)
+		stmts_[i]->Gen(function, local_scope);
 }
 
 } // namespace pswgoo

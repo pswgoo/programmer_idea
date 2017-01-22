@@ -12,23 +12,9 @@
 
 namespace pswgoo {
 
-static std::string kAstIndent = "  ";
-struct AstNode : public Object {
-	AstNode(TokenType token_type = NOT_DEFINED) : token_type_(token_type) {}
-
-	virtual void Print(std::ostream& oa, const std::string& padding)  const {
-		oa << padding + "{" << kTokenTypeStr[token_type_] << "}" << std::endl;
-	}
-
-	virtual void Gen(FunctionSymbol* function, LocalScope* local_scope) const {
-
-	}
-
-	TokenType token_type_;
-};
-
 struct StmtNode : public AstNode {
 	StmtNode(TokenType token_type = NOT_DEFINED) : AstNode(token_type) {}
+	virtual void Gen(FunctionSymbol* function, LocalScope* local_scope, bool right_value = true) const = 0;
 };
 typedef std::unique_ptr<StmtNode> StmtNodePtr;
 
@@ -38,6 +24,7 @@ struct ExprNode : public StmtNode {
 	virtual void Print(std::ostream& oa, const std::string& padding) const override{
 		oa << padding + "{" << "(" << type_->name() << ")" << kTokenTypeStr[token_type_] << "}" << std::endl;
 	}
+	virtual void Gen(FunctionSymbol* function, LocalScope* local_scope, bool right_value = true) const = 0;
 
 	const Type* type_;
 };
@@ -50,7 +37,7 @@ struct ImmediateNode : public ExprNode {
 	virtual void Print(std::ostream& oa, const std::string& padding) const override {
 		oa << padding + "{" << "(" << type_->name() << ")" << symbol_->value_ << "}" << std::endl;
 	}
-	virtual void Gen(FunctionSymbol* function, LocalScope* local_scope) const override;
+	virtual void Gen(FunctionSymbol* function, LocalScope* local_scope, bool right_value = true) const override;
 
 	const LiteralSymbol* symbol_;
 };
@@ -62,13 +49,13 @@ struct VariableNode : public ExprNode {
 
 	virtual void Print(std::ostream& oa, const std::string& padding) const override {
 		oa << padding + "{" << "(" << type_->name() << ")" << kTokenTypeStr[token_type_] << std::endl;
-		oa << padding << symbol_->name() << std::endl;
+		oa << padding + kIndent << symbol_->name() << std::endl;
 		//if (expr_)
-		//	expr_->Print(oa, padding + kAstIndent);
+		//	expr_->Print(oa, padding + kIndent);
 		oa << padding + "}" << std::endl;
 	}
 
-	virtual void Gen(FunctionSymbol* function, LocalScope* local_scope) const override;
+	virtual void Gen(FunctionSymbol* function, LocalScope* local_scope, bool right_value = true) const override;
 
 	const VariableSymbol* symbol_;
 	//ExprNodePtr expr_; // may be nullptr
@@ -81,12 +68,12 @@ struct AssignNode : public ExprNode {
 
 	virtual void Print(std::ostream& oa, const std::string& padding) const override {
 		oa << padding + "{" << "(" << type_->name() << ")" << kTokenTypeStr[token_type_] << std::endl;
-		left_var_->Print(oa, padding + kAstIndent);
-		right_expr_->Print(oa, padding + kAstIndent);
+		left_var_->Print(oa, padding + kIndent);
+		right_expr_->Print(oa, padding + kIndent);
 		oa << padding + "}" << std::endl;
 	}
 
-	virtual void Gen(FunctionSymbol* function, LocalScope* local_scope) const override;
+	virtual void Gen(FunctionSymbol* function, LocalScope* local_scope, bool right_value = true) const override;
 
 	ExprNodePtr left_var_;
 	ExprNodePtr right_expr_;
@@ -98,12 +85,12 @@ struct BinaryOpNode : public ExprNode {
 
 	virtual void Print(std::ostream& oa, const std::string& padding) const override {
 		oa << padding + "{" << "(" << type_->name() << ")" << kTokenTypeStr[token_type_] << std::endl;
-		left_expr_->Print(oa, padding + kAstIndent);
-		right_expr_->Print(oa, padding + kAstIndent);
+		left_expr_->Print(oa, padding + kIndent);
+		right_expr_->Print(oa, padding + kIndent);
 		oa << padding + "}" << std::endl;
 	}
 
-	virtual void Gen(FunctionSymbol* function, LocalScope* local_scope) const override;
+	virtual void Gen(FunctionSymbol* function, LocalScope* local_scope, bool right_value = true) const override;
 
 	ExprNodePtr left_expr_;
 	ExprNodePtr right_expr_;
@@ -115,27 +102,28 @@ struct UnaryOpNode : public ExprNode {
 
 	virtual void Print(std::ostream& oa, const std::string& padding) const override {
 		oa << padding + "{" << "(" << type_->name() << ")" << kTokenTypeStr[token_type_] << std::endl;
-		expr_->Print(oa, padding + kAstIndent);
+		expr_->Print(oa, padding + kIndent);
 		oa << padding + "}" << std::endl;
 	}
-	virtual void Gen(FunctionSymbol* function, LocalScope* local_scope) const override;
+	virtual void Gen(FunctionSymbol* function, LocalScope* local_scope, bool right_value = true) const override;
 
 	ExprNodePtr expr_;
 };
 struct ArrayNode : public ExprNode {
-	ArrayNode(TokenType token_type, const Type* type, ExprNodePtr&& base, ExprNodePtr&& index) : 
-		ExprNode(token_type, type), base_(std::move(base)), index_(std::move(index)) {}
+	ArrayNode(TokenType token_type, const Type* type, const VariableSymbol* ref, std::vector<ExprNodePtr>&& indices) :
+		ExprNode(token_type, type), ref_(ref), indices_(std::move(indices)) {}
 
 	virtual void Print(std::ostream& oa, const std::string& padding) const override {
 		oa << padding + "{" << "(" << type_->name() << ")" << kTokenTypeStr[token_type_] << std::endl;
-		index_->Print(oa, padding + kAstIndent);
-		base_->Print(oa, padding + kAstIndent);
+		for (const ExprNodePtr& index : indices_)
+			index->Print(oa, padding + kIndent);
+		oa << padding + kIndent + "{" << "(" << type_->name() << ")" << ref_->name_ << "}" << std::endl;
 		oa << padding + "}" << std::endl;
 	}
-	virtual void Gen(FunctionSymbol* function, LocalScope* local_scope) const override;
+	virtual void Gen(FunctionSymbol* function, LocalScope* local_scope, bool right_value = true) const override;
 
-	ExprNodePtr base_;  // array base address
-	ExprNodePtr index_;  // array index, type must can be prompt to Int
+	const VariableSymbol *ref_;				// array base address
+	std::vector<ExprNodePtr> indices_;  // array index, type must can be prompt to Int
 };
 typedef std::unique_ptr<ArrayNode> ArrayNodePtr;
 
@@ -148,11 +136,13 @@ struct CallNode : public ExprNode {
 		oa << padding << func_name_ << std::endl;
 		oa << padding << "params" << std::endl;
 		for (const ExprNodePtr& ptr : params_)
-			ptr->Print(oa, padding + kAstIndent);
+			ptr->Print(oa, padding + kIndent);
 		/*oa << padding << "body:" << std::endl;
-		dynamic_cast<const FunctionSymbol*>(scope_->Get(func_name_))->body_->Print(oa, padding + kAstIndent);*/
+		dynamic_cast<const FunctionSymbol*>(scope_->Get(func_name_))->body_->Print(oa, padding + kIndent);*/
 		oa << padding + "}" << std::endl;
 	}
+
+	virtual void Gen(FunctionSymbol* function, LocalScope* local_scope, bool right_value = true) const override;
 
 	std::string func_name_;
 	const FunctionSymbol* function_;
@@ -167,7 +157,7 @@ struct DefNode : public ExprNode {
 	virtual void Print(std::ostream& oa, const std::string& padding) const override {
 		oa << padding + "{" << "(" << type_->name() << ")" << kTokenTypeStr[token_type_] << std::endl;
 		oa << padding << var_name_ << std::endl;
-		expr_->Print(oa, padding + kAstIndent);
+		expr_->Print(oa, padding + kIndent);
 		oa << padding + "}" << std::endl;
 	}
 
@@ -183,10 +173,12 @@ struct StmtBlockNode : public StmtNode {
 	virtual void Print(std::ostream& oa, const std::string& padding) const override {
 		oa << padding + "{" << kTokenTypeStr[token_type_] << " " << stmts_.size() << std::endl;
 		for (const StmtNodePtr& ptr : stmts_)
-			ptr->Print(oa, padding + kAstIndent);
+			ptr->Print(oa, padding + kIndent);
 		oa << padding + "}" << std::endl;
 	}
 	
+	virtual void Gen(FunctionSymbol* function, LocalScope* local_scope, bool right_value = true) const override;
+
 private:
 	std::vector<StmtNodePtr> stmts_;
 };
@@ -226,7 +218,9 @@ public:
 
 	virtual void Print(std::ostream& oa, const std::string& padding) const override {
 		for (const FunctionSymbol* func : all_functions_) {
-			const Function* func_type = dynamic_cast<const Function*>(func->type_);
+			func->Print(oa, padding);
+			oa << std::endl;
+			/*const Function* func_type = dynamic_cast<const Function*>(func->type_);
 			oa << padding + "{Function: " << func->name() << std::endl;
 			oa << padding << "return: " << func_type->ret_type_->name()<< std::endl;
 			oa << padding << "params: ";
@@ -234,8 +228,8 @@ public:
 				oa << (i > 0 ? "," : "") << "(" << func_type->param_types_[i]->name() << ")" << func->param_names_[i];
 			}
 			oa << std::endl << padding << "body:" << std::endl;
-			func->body_->Print(oa, padding + kAstIndent);
-			oa << padding + "}" << std::endl;
+			func->body_->Print(oa, padding + kIndent);
+			oa << padding + "}" << std::endl;*/
 		}
 	}
 
@@ -285,7 +279,7 @@ private:
 	// TODO: literal value to symbol_table
 	int64_t ParseConstInt();
 	ImmediateNodePtr ParseLiteralValue();
-	ExprNodePtr ParseArray(ExprNodePtr &&inherit);
+	ExprNodePtr ParseArray(VariableNodePtr &&inherit);
 	
 	const Type* GetType(const std::string& type_name) const {
 		return dynamic_cast<const Type*>(current_scope_->Get(type_name));

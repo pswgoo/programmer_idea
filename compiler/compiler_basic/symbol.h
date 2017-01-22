@@ -13,9 +13,7 @@
 
 namespace pswgoo {
 
-struct AstNode;
-typedef std::unique_ptr<AstNode> AstNodePtr;
-
+static std::string kIndent = "  ";
 class Object {
 public:
 	template<typename T>
@@ -30,9 +28,28 @@ public:
 	T* To() {
 		return dynamic_cast<T*>(this);
 	}
+
+	virtual void Print(std::ostream& oa, const std::string& padding)  const {}
 protected:
 	virtual void V() {};
 };
+
+class FunctionSymbol;
+class LocalScope;
+struct AstNode : public Object {
+	AstNode(TokenType token_type = NOT_DEFINED) : token_type_(token_type) {}
+
+	virtual void Print(std::ostream& oa, const std::string& padding)  const override {
+		oa << padding + "{" << kTokenTypeStr[token_type_] << "}" << std::endl;
+	}
+
+	virtual void Gen(FunctionSymbol* function, LocalScope* local_scope, bool right_value = true) const {
+
+	}
+
+	TokenType token_type_;
+};
+typedef std::unique_ptr<AstNode> AstNodePtr;
 
 class Symbol : public Object {
 public:
@@ -65,7 +82,7 @@ public:
 	}
 
 	static Instruction::Opcode GetConvertOpcode(const Type* source, const Type* target) {
-		if (source != target)
+		if (source == target)
 			return Instruction::kNonCmd;
 		if (source->type_id_ == kChar || source->type_id_ == kBool) {
 			if (target->type_id_ == kInt)
@@ -75,9 +92,9 @@ public:
 		}
 		else if (source->type_id_ == kInt) {
 			if (target->type_id_ == kChar || source->type_id_ == kBool)
-				return Instruction::kL2C;
+				return Instruction::kI2C;
 			else if (target->type_id_ == kDouble)
-				return Instruction::kL2D;
+				return Instruction::kI2D;
 		}
 		else if (source->type_id_ == kDouble) {
 			if (target->type_id_ == kChar || source->type_id_ == kBool)
@@ -155,10 +172,11 @@ public:
 	VariableSymbol(const std::string& name, const Type* type) : Symbol(name), type_(type) {}
 	const Type* type_; // must be PrimaryType or Reference
 };
+typedef std::unique_ptr<VariableSymbol> VariableSymbolPtr;
 
 class LocalScope : public Scope {
 public:
-	LocalScope(const Scope* parent) : Scope(parent), stack_start_(0), max_stack_size_(0) {
+	LocalScope(const Scope* parent) : Scope(parent), stack_start_(0), stack_top_(0), max_stack_size_(0) {
 		if (parent_->Is<LocalScope>()) {
 			stack_top_ = stack_start_ = parent->To<LocalScope>()->stack_top_;
 			top_ = parent->To<LocalScope>()->top_;
@@ -174,6 +192,8 @@ public:
 				ptr->local_offset_ = stack_top_;
 				stack_top_ += ptr->To<VariableSymbol>()->type_->SizeOf();
 			}
+			else
+				std::clog << "Warning: put non-variable symbol to local scope";
 		}
 		return ptr.get();
 	}
@@ -182,6 +202,27 @@ public:
 		max_stack_size_ = std::max(max_stack_size_, top_ - stack_start_ + child_scope->max_stack_size_);
 		top_ = child_scope->top_;
 		child_scopes_.emplace_back(std::move(child_scope));
+	}
+
+	virtual void Print(std::ostream& oa, const std::string& padding)  const override {
+		std::vector<Symbol*> all_symbols = GetLocalVariables();
+		std::sort(all_symbols.begin(), all_symbols.end(), [](const Symbol* p1, const Symbol* p2) {return p1->index_ < p2->index_; });
+		oa << padding << "Local Scope: " << std::endl;
+		for (int i = 0; i < all_symbols.size(); ++i)
+			oa << padding + kIndent << all_symbols[i]->To<VariableSymbol>()->type_->name() << "\t" << all_symbols[i]->index_ << "\t" << all_symbols[i]->local_offset_ << std::endl;
+	}
+
+protected:
+	std::vector<Symbol*> GetLocalVariables() const {
+		std::vector<Symbol*> ret;
+		for (const auto& pr : symbol_table_)
+			if (pr.second->local_offset_ >= 0)
+				ret.push_back(pr.second.get());
+		for (int i = 0; i < child_scopes_.size(); ++i) {
+			std::vector<Symbol*> tmp = child_scopes_[i]->GetLocalVariables();
+			ret.insert(ret.end(), tmp.begin(), tmp.end());
+		}
+		return ret;
 	}
 
 protected:
@@ -215,8 +256,21 @@ public:
 class FunctionSymbol : public ConstSymbol {
 public:
 	FunctionSymbol(const std::string& name, const std::vector<std::string>& param_names, AstNodePtr&& body, LocalScopePtr&& scope, const Type* type) :
-		ConstSymbol(name, type), param_names_(param_names), body_(std::move(body)), scope_(std::move(scope)) {}
+		ConstSymbol(name, type), param_names_(param_names), body_(std::move(body)), scope_(std::move(scope)) {
+
+	}
 	void add_code(Instruction::Opcode op_code, int64_t param = 0) { code_.emplace_back(Instruction(op_code, param)); }
+
+	virtual void Print(std::ostream& oa, const std::string& padding)  const override {
+		oa << padding << "Function: " << name() << "\t" << param_names_.size() << std::endl;
+		type_->Print(oa, padding);
+		scope_->Print(oa, padding);
+		oa << padding << "Code:" << std::endl;
+		for (int i = 0; i < code_.size(); ++i)
+			oa << padding + kIndent << code_[i].ToString() << std::endl;
+		oa << padding << "Ast:" << std::endl;
+		body_->Print(oa, padding + kIndent);
+	}
 
 	std::vector<std::string> param_names_;
 	std::vector<Instruction> code_;
@@ -255,6 +309,12 @@ public:
 		Type(type->name() + "_" + std::to_string(length), kArray, parent_scope), element_type_(type), length_(length) {}
 
 	virtual int64_t SizeOf() const override { return element_type_->SizeOf() * length_; }
+	int64_t UnitSize() const {
+		const Type* tmp = element_type_;
+		while (tmp->Is<Array>())
+			tmp = tmp->To<Array>()->element_type_;
+		return tmp->SizeOf();
+	}
 
 	const Type* element_type_;
 	int64_t length_;
@@ -304,6 +364,15 @@ public:
 	}
 
 	virtual int64_t SizeOf() const override { return 8; }
+	virtual void Print(std::ostream& oa, const std::string& padding)  const override {
+		oa << padding << ret_type_->name() << "(";
+		for (int i = 0; i < param_types_.size(); ++i)
+			if (i == 0)
+				oa << param_types_[i]->name();
+			else
+				oa << "," << param_types_[i]->name();
+		oa << ")" << std::endl;
+	}
 
 	const Type* ret_type_;
 	std::vector<const Type*> param_types_;
