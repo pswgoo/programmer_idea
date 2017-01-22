@@ -20,7 +20,8 @@ StmtNodePtr Compiler::Parse() {
 	const Lexer::Token* tk = &(lexer_.GoNext());
 	if (tk->type_ == IDENTIFIER) {
 		const Symbol* symbol = current_scope_->Get(tk->value_);
-		if (symbol != nullptr && symbol->Is<Type>()) {
+		assert(symbol != nullptr && "identifier not defined");
+		if (symbol->Is<Type>()) {
 			tk = &(lexer_.GoNext());
 			if (tk->type_ == IDENTIFIER) {
 				ParseFuncDef1((const Type*)symbol, tk->value_);
@@ -111,7 +112,7 @@ const VariableSymbol* Compiler::ParseDecl() {
 		const Type* element_type = type;
 		for (int i = (int)dims.size() - 1; i >= 0; --i) {
 			TypePtr array_type(ArrayPtr(new Array(element_type, dims[i], element_type->parent_scope_)));
-			element_type = dynamic_cast<const Type*>(element_type->parent_scope_->Put(move(array_type)));
+			element_type = element_type->parent_scope_->Put(move(array_type))->To<Type>();
 			TypePtr ref_array(ReferencePtr(new Reference(element_type, element_type->parent_scope_)));
 			type = element_type->parent_scope_->Put(move(ref_array))->To<Type>();
 		}
@@ -380,7 +381,7 @@ ImmediateNodePtr Compiler::ParseLiteralValue() {
 		symbol = global_scope_->Put(LiteralSymbolPtr(new LiteralSymbol(GetType("char"), lexer_.GoNext().value_)));
 		break;
 	case INTEGER:
-		symbol = global_scope_->Put(LiteralSymbolPtr(new LiteralSymbol(GetType("long"), lexer_.GoNext().value_)));
+		symbol = global_scope_->Put(LiteralSymbolPtr(new LiteralSymbol(GetType("int"), lexer_.GoNext().value_)));
 		break;
 	case REAL:
 		symbol = global_scope_->Put(LiteralSymbolPtr(new LiteralSymbol(GetType("double"), lexer_.GoNext().value_)));
@@ -420,13 +421,13 @@ ExprNodePtr Compiler::ParseArray(ExprNodePtr &&inherit) {
 }
 
 int64_t Compiler::ParseConstInt() {
-	static const Type* ptr_long = dynamic_cast<const Type*>(global_scope_->Get("long"));
+	static const Type* ptr_int = dynamic_cast<const Type*>(global_scope_->Get("int"));
 	if (lexer_.Current().type_ == INTEGER)
 		return stoll(lexer_.GoNext().value_);
 	else if (lexer_.Current().type_ == IDENTIFIER) {
 		const ImmediateSymbol* sym = dynamic_cast<const ImmediateSymbol*>(current_scope_->Get(lexer_.GoNext().value_));
 		assert(sym != nullptr && "Identifier is not ImmediateSymbol or not defined!");
-		if (sym->type_->CouldPromoteTo(ptr_long)) {
+		if (sym->type_->CouldPromoteTo(ptr_int)) {
 			if (sym->type_->Is<Char>())
 				return sym->literal_symbol_->value_.front();
 			return stoll(sym->literal_symbol_->value_);
@@ -449,8 +450,8 @@ void ImmediateNode::Gen(FunctionSymbol* function, LocalScope* local_scope) const
 	case Type::kChar:
 		function->add_code(Instruction::kPutC, symbol_->value_.front());
 		break;
-	case Type::kLong:
-		function->add_code(Instruction::kPutL, stoll(symbol_->value_));
+	case Type::kInt:
+		function->add_code(Instruction::kPutI, stoll(symbol_->value_));
 		break;
 	case Type::kDouble:
 		function->add_code(Instruction::kPutD, stoll(symbol_->value_));
@@ -471,8 +472,8 @@ void VariableNode::Gen(FunctionSymbol* function, LocalScope* local_scope) const 
 		case Type::kChar:
 			function->add_code(Instruction::kLoadC, symbol_->local_offset_);
 			break;
-		case Type::kLong:
-			function->add_code(Instruction::kLoadL, symbol_->local_offset_);
+		case Type::kInt:
+			function->add_code(Instruction::kLoadI, symbol_->local_offset_);
 			break;
 		case Type::kDouble:
 			function->add_code(Instruction::kLoadD, symbol_->local_offset_);
@@ -493,8 +494,8 @@ void AssignNode::Gen(FunctionSymbol* function, LocalScope* local_scope) const {
 		left_var_->Gen(function, local_scope);
 		if (type_id == Type::kBool || type_id == Type::kChar)
 			function->add_code(Instruction::kAStoreC);
-		else if (type_id == Type::kLong)
-			function->add_code(Instruction::kAStoreL);
+		else if (type_id == Type::kInt)
+			function->add_code(Instruction::kAStoreI);
 		else if (type_id == Type::kDouble)
 			function->add_code(Instruction::kAStoreD);
 		else if (type_id == Type::kReference)
@@ -510,8 +511,8 @@ void AssignNode::Gen(FunctionSymbol* function, LocalScope* local_scope) const {
 		else {
 			if (type_id == Type::kBool || type_id == Type::kChar)
 				function->add_code(Instruction::kStoreC, symbol->local_offset_);
-			else if (type_id == Type::kLong)
-				function->add_code(Instruction::kStoreL, symbol->local_offset_);
+			else if (type_id == Type::kInt)
+				function->add_code(Instruction::kStoreI, symbol->local_offset_);
 			else if (type_id == Type::kDouble)
 				function->add_code(Instruction::kStoreD, symbol->local_offset_);
 			else if (type_id == Type::kReference)
@@ -525,7 +526,7 @@ void AssignNode::Gen(FunctionSymbol* function, LocalScope* local_scope) const {
 void BinaryOpNode::Gen(FunctionSymbol* function, LocalScope* local_scope) const {
 	left_expr_->Gen(function, local_scope);
 	const Type* common_type = Type::Max(left_expr_->type_, right_expr_->type_);
-	if (type_->name() == "bool")
+	if (type_->Is<Bool>())
 		common_type = type_;
 	if (left_expr_->type_ != type_)
 		function->add_code(Type::GetConvertOpcode(left_expr_->type_, common_type));
@@ -537,47 +538,47 @@ void BinaryOpNode::Gen(FunctionSymbol* function, LocalScope* local_scope) const 
 	case pswgoo::OP_ADD:
 		if (type_id == Type::kChar)
 			function->add_code(Instruction::kAddC);
-		else if (type_id == Type::kLong)
-			function->add_code(Instruction::kAddL);
+		else if (type_id == Type::kInt)
+			function->add_code(Instruction::kAddI);
 		else if (type_id == Type::kDouble)
 			function->add_code(Instruction::kAddD);
-		break;
+		return;
 	case pswgoo::OP_MINUS:
 		if (type_id == Type::kChar)
 			function->add_code(Instruction::kSubC);
-		else if (type_id == Type::kLong)
-			function->add_code(Instruction::kSubL);
+		else if (type_id == Type::kInt)
+			function->add_code(Instruction::kSubI);
 		else if (type_id == Type::kDouble)
 			function->add_code(Instruction::kSubD);
-		break;
+		return;
 	case pswgoo::OP_PRODUCT:
 		if (type_id == Type::kChar)
 			function->add_code(Instruction::kMulC);
-		else if (type_id == Type::kLong)
-			function->add_code(Instruction::kMulL);
+		else if (type_id == Type::kInt)
+			function->add_code(Instruction::kMulI);
 		else if (type_id == Type::kDouble)
 			function->add_code(Instruction::kMulD);
-		break;
+		return;
 	case pswgoo::OP_DIVIDE:
 		if (type_id == Type::kChar)
 			function->add_code(Instruction::kDivC);
-		else if (type_id == Type::kLong)
-			function->add_code(Instruction::kDivL);
+		else if (type_id == Type::kInt)
+			function->add_code(Instruction::kDivI);
 		else if (type_id == Type::kDouble)
 			function->add_code(Instruction::kDivD);
-		break;
+		return;
 	case pswgoo::OP_MOD:
 		if (type_id == Type::kChar)
 			function->add_code(Instruction::kModC);
-		else if (type_id == Type::kLong)
-			function->add_code(Instruction::kModL);
-		break;
+		else if (type_id == Type::kInt)
+			function->add_code(Instruction::kModI);
+		return;
 	case pswgoo::OP_LOGICAL_AND:
 		function->add_code(Instruction::kAnd);
-		break;
+		return;
 	case pswgoo::OP_LOGICAL_OR:
 		function->add_code(Instruction::kOr);
-		break;
+		return;
 	case pswgoo::OP_GREATER:
 	case pswgoo::OP_LESS:
 	case pswgoo::OP_EQUAL:
@@ -586,8 +587,8 @@ void BinaryOpNode::Gen(FunctionSymbol* function, LocalScope* local_scope) const 
 	case pswgoo::OP_LESS_EQUAL:
 		if (type_id == Type::kChar)
 			function->add_code(Instruction::kCmpC);
-		else if (type_id == Type::kLong)
-			function->add_code(Instruction::kCmpL);
+		else if (type_id == Type::kInt)
+			function->add_code(Instruction::kCmpI);
 		else if (type_id == Type::kDouble)
 			function->add_code(Instruction::kCmpD);
 		else
@@ -604,9 +605,7 @@ void BinaryOpNode::Gen(FunctionSymbol* function, LocalScope* local_scope) const 
 			function->add_code(Instruction::kGe);
 		else if (OP_LESS_EQUAL)
 			function->add_code(Instruction::kLe);
-		else
-			assert("cmp operator error!");
-		break;
+		return;
 	default:
 		assert("binary operator not implemented");
 		break;
@@ -615,6 +614,37 @@ void BinaryOpNode::Gen(FunctionSymbol* function, LocalScope* local_scope) const 
 }
 
 void UnaryOpNode::Gen(FunctionSymbol* function, LocalScope* local_scope) const {
+	expr_->Gen(function, local_scope);
+	switch (token_type_) {
+	case pswgoo::NT_TYPE_CAST: {
+		Instruction::Opcode op = Type::GetConvertOpcode(expr_->type_, type_);
+		if (op != Instruction::kNonCmd)
+			function->add_code(op);
+		else if (expr_->type_ != type_)
+			assert("no matched type cast opcode");
+		return;
+	}
+	case pswgoo::OP_ADD:
+		return;
+	case pswgoo::OP_MINUS:
+		if (type_->Is<Char>())
+			function->add_code(Instruction::kNegC);
+		else if (type_->Is<Int>())
+			function->add_code(Instruction::kNegI);
+		else if (type_->Is<Double>())
+			function->add_code(Instruction::kNegD);
+		else
+			assert("type error in unary minus");
+		return;
+	case pswgoo::OP_LOGICAL_NOT:
+		function->add_code(Instruction::kNot);
+		break;
+	default:
+		break;
+	};
+}
+
+void ArrayNode::Gen(FunctionSymbol* function, LocalScope* local_scope) const {
 
 }
 

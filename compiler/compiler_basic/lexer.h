@@ -4,6 +4,7 @@
 #include <string>
 #include <unordered_map>
 #include <cassert>
+#include <iostream>
 
 namespace pswgoo {
 
@@ -67,7 +68,9 @@ public:
 	// @return current token first, then cursor_ += 1;
 	const Token& GoNext();
 	bool Consume(TokenType token) {
-		assert(Current().type_ == token && ("Token Consume not match: " + kTokenTypeStr[token] + "!=" + Current().value_).c_str());
+		//if (Current().type_ != token)
+		//	std::clog << "Error " << Current().value_ << " not match, need " << kTokenTypeStr[token] << std::endl;
+		assert(Current().type_ == token && "Token Consume not match");
 		++cursor_;
 		return true;
 	}

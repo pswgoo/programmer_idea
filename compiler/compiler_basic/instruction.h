@@ -17,11 +17,11 @@ struct Instruction {
 		kDivC,
 		kModC,
 
-		kAddL,
-		kSubL,
-		kMulL,
-		kDivL,
-		kModL,
+		kAddI,
+		kSubI,
+		kMulI,
+		kDivI,
+		kModI,
 
 		kAddD,
 		kSubD,
@@ -29,7 +29,7 @@ struct Instruction {
 		kDivD,
 
 		kCmpC,		//(byte1,byte2)->byte; 比较栈顶两个byte的值. if byte1 > byte2, push 1; if byte1 < byte2, push -1; if byte1 == byte2, push 0.
-		kCmpL,
+		kCmpI,
 		kCmpD,
 
 		kEq,		// byte1 -> byte; If byte1 is 0, push 1; if byte1 is not 0, push 0.
@@ -43,41 +43,45 @@ struct Instruction {
 
 		kCall,		//#function_symbol_index; (arg1, arg2...) -> result
 
-		kC2L,		// byte1 -> 8_byte; char convert to long.
+		kC2I,		// byte1 -> 8_byte; char convert to int.
 		kC2D,
 		
 		kL2C,
 		kL2D,
 
 		kD2C,
-		kD2L,
+		kD2I,
+
+		kNegC,		// negate a char
+		kNegI,		// negate a int
+		kNegD,
 
 		kAnd,		// (byte1,byte2) -> byte; if byte1 is 1 and byte2 is 1, push 1; else push 0.
 		kOr,
 		kNot,		// byte1 -> byte; if byte1 is 0, push 1, if byte1 is 1, push 0.
 
 		kPutC,		// $char_literal; push a char literal value to operand stack.
-		kPutL,
+		kPutI,
 		kPutD,
 		kPutN,		// $nullptr; push nullptr to operand stack.
 
 		kLoadC,
-		kLoadL,     // @local_stack_index; load a local long variable to operand stack.
+		kLoadI,     // @local_stack_index; load a local int variable to operand stack.
 		kLoadD,
 		kLoadR,
 
 		kStoreC,
-		kStoreL,	// (byte1,byte2,byte3,byte4) -> @local_stack_index; 
+		kStoreI,	// (byte1,byte2,byte3,byte4) -> @local_stack_index; 
 		kStoreD,
 		kStoreR,
 
-		kALoadC,	// (arrayref, index) -> value
-		kALoadL,	
+		kALoadC,	// (index, arrayref) -> value
+		kALoadI,	
 		kALoadD,
 		kALoadR,
 
-		kAStoreC,	// (arrayref, index, value) -> 
-		kAStoreL,
+		kAStoreC,	// (index, arrayref, value) -> 
+		kAStoreI,
 		kAStoreD,
 		kAStoreR,
 

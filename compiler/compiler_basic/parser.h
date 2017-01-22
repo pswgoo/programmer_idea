@@ -132,9 +132,10 @@ struct ArrayNode : public ExprNode {
 		base_->Print(oa, padding + kAstIndent);
 		oa << padding + "}" << std::endl;
 	}
+	virtual void Gen(FunctionSymbol* function, LocalScope* local_scope) const override;
 
 	ExprNodePtr base_;  // array base address
-	ExprNodePtr index_;  // array index
+	ExprNodePtr index_;  // array index, type must can be prompt to Int
 };
 typedef std::unique_ptr<ArrayNode> ArrayNodePtr;
 
@@ -214,7 +215,7 @@ public:
 		// put primitive types to global scope
 		global_scope_->Put(std::unique_ptr<Bool>(new Bool(global_scope_.get())));
 		global_scope_->Put(std::unique_ptr<Char>(new Char(global_scope_.get())));
-		global_scope_->Put(std::unique_ptr<Long>(new Long(global_scope_.get())));
+		global_scope_->Put(std::unique_ptr<Int>(new Int(global_scope_.get())));
 		global_scope_->Put(std::unique_ptr<Double>(new Double(global_scope_.get())));
 		current_scope_ = global_scope_.get();
 	}
@@ -222,7 +223,6 @@ public:
 	void Parse(const std::string& program);
 
 	void Gen();
-	void Gen(AstNode* node, FunctionSymbol* function, LocalScope* local_scope);
 
 	virtual void Print(std::ostream& oa, const std::string& padding) const override {
 		for (const FunctionSymbol* func : all_functions_) {

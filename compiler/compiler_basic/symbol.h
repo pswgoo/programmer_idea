@@ -51,7 +51,7 @@ typedef std::unique_ptr<Symbol> SymbolPtr;
 
 class Type : public Symbol {
 public:
-	enum TypeId { kBool, kChar, kLong, kDouble, kPrimitiveType, kReference, kArray, kString, kFunction, kClass };
+	enum TypeId { kBool, kChar, kInt, kDouble, kPrimitiveType, kReference, kArray, kString, kFunction, kClass };
 	Type(TypeId type_id) : type_id_(type_id) {}
 	Type(const std::string& name, TypeId type_id, Scope* parent_scope) : Symbol(name), type_id_(type_id), parent_scope_(parent_scope) {}
 
@@ -68,12 +68,12 @@ public:
 		if (source != target)
 			return Instruction::kNonCmd;
 		if (source->type_id_ == kChar || source->type_id_ == kBool) {
-			if (target->type_id_ == kLong)
-				return Instruction::kC2L;
+			if (target->type_id_ == kInt)
+				return Instruction::kC2I;
 			else if (target->type_id_ == kDouble)
 				return Instruction::kC2D;
 		}
-		else if (source->type_id_ == kLong) {
+		else if (source->type_id_ == kInt) {
 			if (target->type_id_ == kChar || source->type_id_ == kBool)
 				return Instruction::kL2C;
 			else if (target->type_id_ == kDouble)
@@ -82,20 +82,10 @@ public:
 		else if (source->type_id_ == kDouble) {
 			if (target->type_id_ == kChar || source->type_id_ == kBool)
 				return Instruction::kD2C;
-			else if (target->type_id_ == kLong)
-				return Instruction::kD2L;
+			else if (target->type_id_ == kInt)
+				return Instruction::kD2I;
 		}
 		assert("type cannot convert");
-		return Instruction::kNonCmd;
-	}
-	static Instruction::Opcode GetBinaryOpcode(TypeId type_id) {
-		if (type_id == kChar)
-			return Instruction::kAddC;
-		else if (type_id == kLong)
-			return Instruction::kAddL;
-		else if (type_id == kDouble)
-			return Instruction::kAddD;
-		assert("no add opcode for the type");
 		return Instruction::kNonCmd;
 	}
 
@@ -247,9 +237,9 @@ public:
 	virtual int64_t SizeOf() const override { return 1; }
 };
 
-class Long : public Type {
+class Int : public Type {
 public:
-	Long(Scope* parent_scope) : Type("long", kLong, parent_scope) {}
+	Int(Scope* parent_scope) : Type("int", kInt, parent_scope) {}
 	virtual int64_t SizeOf() const override { return 8; }
 };
 
