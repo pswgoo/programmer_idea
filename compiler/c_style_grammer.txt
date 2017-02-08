@@ -83,5 +83,5 @@ Expr9R -> * Expr10 Expr9R | / Expr10 Expr9R | % Expr10 Expr9R | epsilon
 
 Expr10 -> !Expr11 | +Expr11 | -Expr11 | ~Expr11 | Expr11   ## ++Expr11 | --Expr11 | 
 
-Expr11 -> Func Expr11R | IdValue Expr11R | (Type)Expr Expr11R | (Expr) Expr11R | ImmediateValue
+Expr11 -> Func Expr11R | IdValue Expr11R | (Type)Expr Expr11R | (Expr) Expr11R | ImmediateValue | new Type Array
 ## Expr11R -> ++ | -- | epsilon

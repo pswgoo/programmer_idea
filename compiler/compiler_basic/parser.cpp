@@ -68,32 +68,70 @@ void Compiler::ParseFuncDef1(const Type* type, const std::string &name) {
 	else
 		assert(0 && "Function Body must begin with left brace!");
 	left_func_ptr->body_ = move(body);
-	current_scope_ = last_scope;
+	current_scope_ = current_scope_->Pop();
 	all_functions_.push_back(left_func_ptr);
 }
 
 StmtNodePtr Compiler::ParseStmt() {
 	switch (lexer_.Current().type_) {
-	case OP_LEFT_BRACE: {
-		lexer_.Consume(OP_LEFT_BRACE);
-		unique_ptr<StmtBlockNode> stmt_block(new StmtBlockNode());
-		while (lexer_.Current().type_ != OP_RIGHT_BRACE) {
-			stmt_block->AddStmt(move(ParseStmt()));
-			//lexer_.Consume(OP_SEMICOLON);
+		case OP_LEFT_BRACE: {
+			lexer_.Consume(OP_LEFT_BRACE);
+			LocalScope local_scope(current_scope_);
+			current_scope_ = &local_scope;
+			unique_ptr<StmtBlockNode> stmt_block(new StmtBlockNode());
+			while (lexer_.Current().type_ != OP_RIGHT_BRACE) {
+				stmt_block->AddStmt(move(ParseStmt()));
+			}
+			lexer_.Consume(OP_RIGHT_BRACE);
+			current_scope_ = current_scope_->Pop(); // must use Pop() here, because Pop will add child local scope to parent local scope.
+			return move(stmt_block);
 		}
-		lexer_.Consume(OP_RIGHT_BRACE);
-		return move(stmt_block);
-	}
-	case IDENTIFIER:
-		if (CurrentIsType()) {
-			ParseDecl();
+		case KEY_RETURN: {
+			lexer_.ToNext();
+			ExprNodePtr expr = ParseExpr();
 			lexer_.Consume(OP_SEMICOLON);
+			return StmtNodePtr(new ReturnNode(KEY_RETURN, expr->type_, move(expr)));
+		}
+		case KEY_IF: {
+			lexer_.ToNext();
+			lexer_.Consume(OP_LEFT_PARENTHESIS);
+			ExprNodePtr condition = ParseExpr();
+			assert(condition->type_->type_id_ == Type::kBool && "Type is not bool in if condition!");
+			lexer_.Consume(OP_RIGHT_PARENTHESIS);
+			StmtNodePtr then = ParseStmt();
+			StmtNodePtr els;
+			if (lexer_.Current().type_ == KEY_ELSE) {
+				lexer_.ToNext();
+				els = ParseStmt();
+			}
+			return StmtNodePtr(new IfNode(move(condition), move(then), move(els)));
+		}
+		case KEY_FOR: {
+			lexer_.ToNext();
+			lexer_.Consume(OP_LEFT_PARENTHESIS);
+			ExprNodePtr init = ParseExpr(); // currently only consider expression.
+			lexer_.Consume(OP_SEMICOLON);
+			ExprNodePtr condition = ParseExpr();
+			lexer_.Consume(OP_SEMICOLON);
+			ExprNodePtr iter = ParseExpr();
+			lexer_.Consume(OP_RIGHT_PARENTHESIS);
+			StmtNodePtr body = ParseStmt();
+			return StmtNodePtr(new ForNode(move(init), move(condition), move(iter),move(body)));
+		}
+		case KEY_WHILE: {
+			assert(0 && "Not complete while!");
 			return nullptr;
 		}
-	default: // Expression
-		StmtNodePtr expr = ParseExpr();
-		lexer_.Consume(OP_SEMICOLON);
-		return move(expr);
+		case IDENTIFIER:
+			if (CurrentIsType()) {
+				ParseDecl();
+				lexer_.Consume(OP_SEMICOLON);
+				return nullptr;
+			}
+		default: // Expression
+			StmtNodePtr expr = ParseExpr();
+			lexer_.Consume(OP_SEMICOLON);
+			return move(expr);
 	}
 	return nullptr;
 }
@@ -336,6 +374,27 @@ ExprNodePtr Compiler::ParseE11() {
 		}
 		else if (symbol->Is<FunctionSymbol>()) {
 			return ParseCall();
+		}
+	}
+	else if (cur_type == KEY_NEW) { // new array
+		lexer_.ToNext();
+		const Type* element_type = current_scope_->Get(lexer_.Current().value_)->To<Type>();
+		if (element_type != nullptr) {
+			lexer_.ToNext();
+			vector<int64_t> dims;
+			while (lexer_.Current().type_ == OP_LEFT_BRACKET) {
+				lexer_.Consume(OP_LEFT_BRACKET);
+				dims.push_back(ParseConstInt());
+				lexer_.Consume(OP_RIGHT_BRACKET);
+			}
+			const Type* ref_type = element_type;
+			for (int i = (int)dims.size() - 1; i >= 0; --i) {
+				TypePtr array_type(ArrayPtr(new Array(element_type, dims[i], element_type->parent_scope_)));
+				element_type = element_type->parent_scope_->Put(move(array_type))->To<Type>();
+				TypePtr ref_array(ReferencePtr(new Reference(element_type, element_type->parent_scope_)));
+				ref_type = element_type->parent_scope_->Put(move(ref_array))->To<Type>();
+			}
+			return ExprNodePtr(new NewNode(KEY_NEW, ref_type));
 		}
 	}
 	else
@@ -689,6 +748,28 @@ void CallNode::Gen(FunctionSymbol* function, LocalScope* local_scope, bool right
 void StmtBlockNode::Gen(FunctionSymbol* function, LocalScope* local_scope, bool right_value) const {
 	for (int i = 0; i < stmts_.size(); ++i)
 		stmts_[i]->Gen(function, local_scope);
+}
+
+void NewNode::Gen(FunctionSymbol* function, LocalScope* local_scope, bool right_value = true) const {
+	const Type* ref_type = type_->To<Reference>()->ref_type_;
+	if (ref_type->Is<Array>()) {
+		function->add_code(Instruction::kPutI, ref_type->To<Array>()->SizeOf() / ref_type->To<Array>()->UnitSize());
+		function->add_code(Instruction::kNewA, ref_type->index_);
+	}
+}
+
+void ReturnNode::Gen(FunctionSymbol * function, LocalScope * local_scope, bool right_value) const {
+
+}
+
+void IfNode::Gen(FunctionSymbol * function, LocalScope * local_scope, bool right_value) const {
+
+}
+
+void WhileNode::Gen(FunctionSymbol * function, LocalScope * local_scope, bool right_value) const {
+}
+
+void ForNode::Gen(FunctionSymbol * function, LocalScope * local_scope, bool right_value) const {
 }
 
 } // namespace pswgoo

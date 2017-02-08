@@ -15,7 +15,7 @@ const unordered_map<string, TokenType> Lexer::kKeyWords = {
 	{ "case", KEY_CASE }, { "struct", KEY_STRUCT }, { "class", KEY_CLASS }, { "const", KEY_CONST }, { "do", KEY_DO },
 	{ "goto", KEY_GOTO }, { "break", KEY_BREAK },
 	{ "continue", KEY_CONTINUE }, { "default", KEY_DEFAULT }, { "return", KEY_RETURN }, { "void", KEY_VOID },
-	{ "true", BOOLEAN }, { "false", BOOLEAN }, {"null", NULL_REF},
+	{ "true", BOOLEAN }, { "false", BOOLEAN }, {"null", NULL_REF}, {"new", KEY_NEW}, 
 };
 
 const unordered_map<string, TokenType> Lexer::kOperators = { 

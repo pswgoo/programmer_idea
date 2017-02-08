@@ -165,6 +165,33 @@ struct DefNode : public ExprNode {
 	ExprNodePtr expr_;
 };
 
+struct NewNode : public ExprNode {
+	NewNode(TokenType token_type, const Type* type): ExprNode(token_type, type){}
+
+	virtual void Print(std::ostream& oa, const std::string& padding) const override {
+		oa << padding + "{" << "(" << type_->name() << ")" << kTokenTypeStr[token_type_] << std::endl;
+		oa << padding << "new" << std::endl;
+		oa << padding << type_->To<Reference>()->ref_type_->name() << std::endl;
+		oa << padding + "}" << std::endl;
+	}
+
+	void Gen(FunctionSymbol* function, LocalScope* local_scope, bool right_value) const override;
+};
+
+struct ReturnNode : public ExprNode {
+	ReturnNode(TokenType token_type, const Type* type, ExprNodePtr&& expr) : ExprNode(token_type, type), expr_(move(expr)) {}
+
+	virtual void Print(std::ostream& oa, const std::string& padding) const override {
+		oa << padding + "{" << "(" << type_->name() << ")" << kTokenTypeStr[token_type_] << std::endl;
+		oa << padding << "return" << std::endl;
+		expr_->Print(oa, padding + kIndent);
+		oa << padding + "}" << std::endl;
+	}
+
+	void Gen(FunctionSymbol* function, LocalScope* local_scope, bool right_value) const override;
+	ExprNodePtr expr_;
+};
+
 struct StmtBlockNode : public StmtNode {
 	StmtBlockNode() :StmtNode(NT_STMT_BLOCK) {};
 
@@ -184,19 +211,54 @@ private:
 };
 
 struct IfNode : public StmtNode {
+	IfNode(ExprNodePtr&& condition, StmtNodePtr&& then, StmtNodePtr&& els) : 
+		StmtNode(NT_IF), condition_(std::move(condition)), then_(std::move(then)), else_(std::move(els)) {};
+
+	virtual void Print(std::ostream& oa, const std::string& padding) const override {
+		oa << padding + "{" << kTokenTypeStr[token_type_] << std::endl;
+		oa << padding << "condition" << std::endl;
+		condition_->Print(oa, padding + kIndent);
+		oa << padding << "then" << std::endl;
+		then_->Print(oa, padding + kIndent);
+		oa << padding << "else" << std::endl;
+		else_->Print(oa, padding + kIndent);
+		oa << padding + "}" << std::endl;
+	}
+
+	void Gen(FunctionSymbol* function, LocalScope* local_scope, bool right_value) const override;
 	ExprNodePtr condition_;
 	StmtNodePtr then_;
 	StmtNodePtr else_;
 };
 
 struct ForNode : public StmtNode {
+	ForNode(StmtNodePtr&& init, ExprNodePtr&& condition, ExprNodePtr&& iter, StmtNodePtr&& body) :
+		StmtNode(NT_FOR), init_(move(init)), condition_(move(condition)), iter_(move(iter)), body_(move(body)) {};
+
+	virtual void Print(std::ostream& oa, const std::string& padding) const override {
+		oa << padding + "{" << kTokenTypeStr[token_type_] << std::endl;
+		oa << padding << "init" << std::endl;
+		init_->Print(oa, padding + kIndent);
+		oa << padding << "condition" << std::endl;
+		condition_->Print(oa, padding + kIndent);
+		oa << padding << "iter" << std::endl;
+		iter_->Print(oa, padding + kIndent);
+		oa << padding << "body" << std::endl;
+		body_->Print(oa, padding + kIndent);
+		oa << padding + "}" << std::endl;
+	}
+
+	void Gen(FunctionSymbol* function, LocalScope* local_scope, bool right_value) const override;
 	StmtNodePtr init_;
 	ExprNodePtr condition_;
-	StmtNodePtr iter_;
+	ExprNodePtr iter_;
 	StmtNodePtr body_;
 };
 
 struct WhileNode : public StmtNode {
+	WhileNode() : StmtNode(NT_WHILE) {};
+
+	void Gen(FunctionSymbol* function, LocalScope* local_scope, bool right_value) const override;
 	ExprNodePtr condition_;
 	StmtNodePtr body_;
 };

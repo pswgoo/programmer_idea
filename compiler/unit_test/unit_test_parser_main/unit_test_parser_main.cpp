@@ -11,8 +11,7 @@ int main(int argc, char** argv) {
 	string test_str = R"DELIM(
 
 int add(int a, int b) {
-	int ret;
-	ret = a + b;
+	return a + b;
 }
 
 int main() {
@@ -26,7 +25,13 @@ int main() {
 	d = (char)(c+a);
 	c = add(main(), c);
 	
+	int f;
+	f = 0;
+	for (a = 3; a < c; a += 1)
+		f += a;
+
 	int e[10][50][30];
+	e = new int[10][50][30];
 	e[2][1][3] = 342;
 	b = e[2][1][add(d, c)] + d;
 }

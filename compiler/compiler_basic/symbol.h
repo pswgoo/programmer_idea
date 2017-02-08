@@ -30,8 +30,6 @@ public:
 	}
 
 	virtual void Print(std::ostream& oa, const std::string& padding)  const {}
-protected:
-	virtual void V() {};
 };
 
 class FunctionSymbol;
@@ -127,7 +125,7 @@ class LiteralSymbol;
 class ImmediateSymbol;
 class Scope : public Object {
 public:
-	Scope(const Scope* parent_ptr = nullptr) : parent_(parent_ptr) { if (parent_) depth_ = parent_->depth_ + 1; }
+	Scope(Scope* const parent_ptr = nullptr) : parent_(parent_ptr) { if (parent_) depth_ = parent_->depth_ + 1; }
 
 	const Symbol* GetCurrent(const std::string& name) const {
 		std::unordered_map<std::string, SymbolPtr>::const_iterator fid = symbol_table_.find(name);
@@ -156,11 +154,17 @@ public:
 	Symbol* Get(const std::string& name) {
 		return const_cast<Symbol*>(const_cast<const Scope*>(this)->Get(name));
 	}
+
+	virtual Scope* Pop() {
+		return parent_;
+	}
+
 	const Scope* parent() const { return parent_; }
+	Scope* parent() { return parent_; }
 	int depth() const { return depth_; }
 
 protected:
-	const Scope* parent_ = nullptr;
+	Scope* const parent_ = nullptr;
 	int depth_ = 0;
 	int64_t top_ = 0;
 	std::unordered_map<std::string, SymbolPtr> symbol_table_;
@@ -176,7 +180,7 @@ typedef std::unique_ptr<VariableSymbol> VariableSymbolPtr;
 
 class LocalScope : public Scope {
 public:
-	LocalScope(const Scope* parent) : Scope(parent), stack_start_(0), stack_top_(0), max_stack_size_(0) {
+	LocalScope(Scope* const parent) : Scope(parent), stack_start_(0), stack_top_(0), max_stack_size_(0) {
 		if (parent_->Is<LocalScope>()) {
 			stack_top_ = stack_start_ = parent->To<LocalScope>()->stack_top_;
 			top_ = parent->To<LocalScope>()->top_;
@@ -197,10 +201,17 @@ public:
 		}
 		return ptr.get();
 	}
+
+	virtual Scope* Pop() override {
+		if (parent_->Is<LocalScope>())
+			parent_->To<LocalScope>()->add_child_scope(*this);
+		return parent_;
+	}
+
 	// cannot parallel
-	void add_child_scope(std::unique_ptr<LocalScope>&& child_scope) {
-		max_stack_size_ = std::max(max_stack_size_, top_ - stack_start_ + child_scope->max_stack_size_);
-		top_ = child_scope->top_;
+	void add_child_scope(LocalScope& child_scope) {
+		max_stack_size_ = std::max(max_stack_size_, top_ - stack_start_ + child_scope.max_stack_size_);
+		top_ = child_scope.top_;
 		child_scopes_.emplace_back(std::move(child_scope));
 	}
 
@@ -219,7 +230,7 @@ protected:
 			if (pr.second->local_offset_ >= 0)
 				ret.push_back(pr.second.get());
 		for (int i = 0; i < child_scopes_.size(); ++i) {
-			std::vector<Symbol*> tmp = child_scopes_[i]->GetLocalVariables();
+			std::vector<Symbol*> tmp = child_scopes_[i].GetLocalVariables();
 			ret.insert(ret.end(), tmp.begin(), tmp.end());
 		}
 		return ret;
@@ -229,7 +240,7 @@ protected:
 	int64_t stack_start_;
 	int64_t stack_top_;
 	int64_t max_stack_size_;
-	std::vector<std::unique_ptr<LocalScope>> child_scopes_;
+	std::vector<LocalScope> child_scopes_;
 };
 typedef std::unique_ptr<LocalScope> LocalScopePtr;
 
