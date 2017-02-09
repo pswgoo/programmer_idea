@@ -40,6 +40,7 @@ const std::string kInstructionStr[] = {
 	"kNe",		// byte1 -> byte; If byte1 is not 0", push 1", else push 0.
 
 	"kIfFalse",	//#instr_offset; byte1 -> ; If byte1 is 0", then goto the instr_offset
+	"kGoto",	// #instr_offset;
 
 	"kCall",		//#function_symbol_index; (arg1", arg2...) -> result
 
@@ -126,9 +127,10 @@ struct Instruction {
 		kGe,		// byte1 -> byte; If byte1 is 0 or 1, push 1, else push 0.
 		kNe,		// byte1 -> byte; If byte1 is not 0, push 1, else push 0.
 
-		kIfFalse,	//#instr_offset; byte1 -> ; If byte1 is 0, then goto the instr_offset
+		kIfFalse,	// #instr_offset; byte1 -> ; If byte1 is 0, then goto the instr_offset
+		kGoto,		// #instr_offset;
 
-		kCall,		//#function_symbol_index; (arg1, arg2...) -> result
+		kCall,		// #function_symbol_index; (arg1, arg2...) -> result
 
 		kC2I,		// byte1 -> 8_byte; char convert to int.
 		kC2D,

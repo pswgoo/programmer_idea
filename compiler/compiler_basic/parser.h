@@ -263,6 +263,18 @@ struct WhileNode : public StmtNode {
 	StmtNodePtr body_;
 };
 
+struct BreakNode : public StmtNode {
+	BreakNode() : StmtNode(KEY_BREAK) {};
+
+	void Gen(FunctionSymbol* function, LocalScope* local_scope, bool right_value) const override;
+};
+
+struct ContinueNode : public StmtNode {
+	ContinueNode() : StmtNode(KEY_CONTINUE) {};
+
+	void Gen(FunctionSymbol* function, LocalScope* local_scope, bool right_value) const override;
+};
+
 class Compiler : public StmtBlockNode {
 public:
 	Compiler(): global_scope_(new Scope){

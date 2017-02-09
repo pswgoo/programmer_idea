@@ -68,7 +68,7 @@ void Compiler::ParseFuncDef1(const Type* type, const std::string &name) {
 	else
 		assert(0 && "Function Body must begin with left brace!");
 	left_func_ptr->body_ = move(body);
-	current_scope_ = current_scope_->Pop();
+	current_scope_ = last_scope;
 	all_functions_.push_back(left_func_ptr);
 }
 
@@ -76,14 +76,17 @@ StmtNodePtr Compiler::ParseStmt() {
 	switch (lexer_.Current().type_) {
 		case OP_LEFT_BRACE: {
 			lexer_.Consume(OP_LEFT_BRACE);
-			LocalScope local_scope(current_scope_);
-			current_scope_ = &local_scope;
+			LocalScopePtr local_scope(new LocalScope(current_scope_));
+			current_scope_ = local_scope.get();
 			unique_ptr<StmtBlockNode> stmt_block(new StmtBlockNode());
 			while (lexer_.Current().type_ != OP_RIGHT_BRACE) {
 				stmt_block->AddStmt(move(ParseStmt()));
 			}
 			lexer_.Consume(OP_RIGHT_BRACE);
-			current_scope_ = current_scope_->Pop(); // must use Pop() here, because Pop will add child local scope to parent local scope.
+			if (current_scope_->parent()->Is<LocalScope>())
+				current_scope_->parent()->To<LocalScope>()->add_child_scope(move(local_scope));
+
+			current_scope_ = current_scope_->parent();
 			return move(stmt_block);
 		}
 		case KEY_RETURN: {
@@ -767,9 +770,19 @@ void IfNode::Gen(FunctionSymbol * function, LocalScope * local_scope, bool right
 }
 
 void WhileNode::Gen(FunctionSymbol * function, LocalScope * local_scope, bool right_value) const {
+
 }
 
 void ForNode::Gen(FunctionSymbol * function, LocalScope * local_scope, bool right_value) const {
+
+}
+
+void BreakNode::Gen(FunctionSymbol * function, LocalScope * local_scope, bool right_value) const {
+	function->add_code(Instruction::kGoto);
+}
+
+void ContinueNode::Gen(FunctionSymbol * function, LocalScope * local_scope, bool right_value) const {
+	function->add_code(Instruction::kGoto);
 }
 
 } // namespace pswgoo

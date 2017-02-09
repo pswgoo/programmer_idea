@@ -155,10 +155,6 @@ public:
 		return const_cast<Symbol*>(const_cast<const Scope*>(this)->Get(name));
 	}
 
-	virtual Scope* Pop() {
-		return parent_;
-	}
-
 	const Scope* parent() const { return parent_; }
 	Scope* parent() { return parent_; }
 	int depth() const { return depth_; }
@@ -202,16 +198,10 @@ public:
 		return ptr.get();
 	}
 
-	virtual Scope* Pop() override {
-		if (parent_->Is<LocalScope>())
-			parent_->To<LocalScope>()->add_child_scope(*this);
-		return parent_;
-	}
-
 	// cannot parallel
-	void add_child_scope(LocalScope& child_scope) {
-		max_stack_size_ = std::max(max_stack_size_, top_ - stack_start_ + child_scope.max_stack_size_);
-		top_ = child_scope.top_;
+	void add_child_scope(std::unique_ptr<LocalScope>&& child_scope) {
+		max_stack_size_ = std::max(max_stack_size_, top_ - stack_start_ + child_scope->max_stack_size_);
+		top_ = child_scope->top_;
 		child_scopes_.emplace_back(std::move(child_scope));
 	}
 
@@ -230,7 +220,7 @@ protected:
 			if (pr.second->local_offset_ >= 0)
 				ret.push_back(pr.second.get());
 		for (int i = 0; i < child_scopes_.size(); ++i) {
-			std::vector<Symbol*> tmp = child_scopes_[i].GetLocalVariables();
+			std::vector<Symbol*> tmp = child_scopes_[i]->GetLocalVariables();
 			ret.insert(ret.end(), tmp.begin(), tmp.end());
 		}
 		return ret;
@@ -240,7 +230,7 @@ protected:
 	int64_t stack_start_;
 	int64_t stack_top_;
 	int64_t max_stack_size_;
-	std::vector<LocalScope> child_scopes_;
+	std::vector<std::unique_ptr<LocalScope>> child_scopes_;
 };
 typedef std::unique_ptr<LocalScope> LocalScopePtr;
 
