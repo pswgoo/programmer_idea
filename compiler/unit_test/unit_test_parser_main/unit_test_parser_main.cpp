@@ -10,6 +10,12 @@ using namespace pswgoo;
 int main(int argc, char** argv) {
 	string test_str = R"DELIM(
 
+int fab(int n) {
+	if (n <= 2)
+		return 1;
+	return fab(n-1) + fab(n - 2);
+}
+
 int add(int a, int b) {
 	return a + b;
 }
@@ -27,13 +33,19 @@ int main() {
 	
 	int f;
 	f = 0;
-	for (a = 3; a < c; a += 1)
-		f += a;
+	for (a = 3; a < c; a = a+ 1) {
+		f = f + a;
+		int g;
+		g = f -b;
+		b = g + a;
+	}
 
 	int e[10][50][30];
 	e = new int[10][50][30];
 	e[2][1][3] = 342;
 	b = e[2][1][add(d, c)] + d;
+
+	return fab(5);
 }
 
 	)DELIM";

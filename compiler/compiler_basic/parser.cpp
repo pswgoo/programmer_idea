@@ -74,67 +74,67 @@ void Compiler::ParseFuncDef1(const Type* type, const std::string &name) {
 
 StmtNodePtr Compiler::ParseStmt() {
 	switch (lexer_.Current().type_) {
-		case OP_LEFT_BRACE: {
-			lexer_.Consume(OP_LEFT_BRACE);
-			LocalScopePtr local_scope(new LocalScope(current_scope_));
-			current_scope_ = local_scope.get();
-			unique_ptr<StmtBlockNode> stmt_block(new StmtBlockNode());
-			while (lexer_.Current().type_ != OP_RIGHT_BRACE) {
-				stmt_block->AddStmt(move(ParseStmt()));
-			}
-			lexer_.Consume(OP_RIGHT_BRACE);
-			if (current_scope_->parent()->Is<LocalScope>())
-				current_scope_->parent()->To<LocalScope>()->add_child_scope(move(local_scope));
+	case OP_LEFT_BRACE: {
+		lexer_.Consume(OP_LEFT_BRACE);
+		LocalScopePtr local_scope(new LocalScope(current_scope_));
+		current_scope_ = local_scope.get();
+		unique_ptr<StmtBlockNode> stmt_block(new StmtBlockNode());
+		while (lexer_.Current().type_ != OP_RIGHT_BRACE) {
+			stmt_block->AddStmt(move(ParseStmt()));
+		}
+		lexer_.Consume(OP_RIGHT_BRACE);
+		if (current_scope_->parent()->Is<LocalScope>())
+			current_scope_->parent()->To<LocalScope>()->add_child_scope(move(local_scope));
 
-			current_scope_ = current_scope_->parent();
-			return move(stmt_block);
-		}
-		case KEY_RETURN: {
+		current_scope_ = current_scope_->parent();
+		return move(stmt_block);
+	}
+	case KEY_RETURN: {
+		lexer_.ToNext();
+		ExprNodePtr expr = ParseExpr();
+		lexer_.Consume(OP_SEMICOLON);
+		return StmtNodePtr(new ReturnNode(KEY_RETURN, expr->type_, move(expr)));
+	}
+	case KEY_IF: {
+		lexer_.ToNext();
+		lexer_.Consume(OP_LEFT_PARENTHESIS);
+		ExprNodePtr condition = ParseExpr();
+		assert(condition->type_->type_id_ == Type::kBool && "Type is not bool in if condition!");
+		lexer_.Consume(OP_RIGHT_PARENTHESIS);
+		StmtNodePtr then = ParseStmt();
+		StmtNodePtr els;
+		if (lexer_.Current().type_ == KEY_ELSE) {
 			lexer_.ToNext();
-			ExprNodePtr expr = ParseExpr();
-			lexer_.Consume(OP_SEMICOLON);
-			return StmtNodePtr(new ReturnNode(KEY_RETURN, expr->type_, move(expr)));
+			els = ParseStmt();
 		}
-		case KEY_IF: {
-			lexer_.ToNext();
-			lexer_.Consume(OP_LEFT_PARENTHESIS);
-			ExprNodePtr condition = ParseExpr();
-			assert(condition->type_->type_id_ == Type::kBool && "Type is not bool in if condition!");
-			lexer_.Consume(OP_RIGHT_PARENTHESIS);
-			StmtNodePtr then = ParseStmt();
-			StmtNodePtr els;
-			if (lexer_.Current().type_ == KEY_ELSE) {
-				lexer_.ToNext();
-				els = ParseStmt();
-			}
-			return StmtNodePtr(new IfNode(move(condition), move(then), move(els)));
-		}
-		case KEY_FOR: {
-			lexer_.ToNext();
-			lexer_.Consume(OP_LEFT_PARENTHESIS);
-			ExprNodePtr init = ParseExpr(); // currently only consider expression.
+		return StmtNodePtr(new IfNode(move(condition), move(then), move(els)));
+	}
+	case KEY_FOR: {
+		lexer_.ToNext();
+		lexer_.Consume(OP_LEFT_PARENTHESIS);
+		ExprNodePtr init = ParseExpr(); // currently only consider expression.
+		lexer_.Consume(OP_SEMICOLON);
+		ExprNodePtr condition = ParseExpr();
+		lexer_.Consume(OP_SEMICOLON);
+		ExprNodePtr iter = ParseExpr();
+		lexer_.Consume(OP_RIGHT_PARENTHESIS);
+		StmtNodePtr body = ParseStmt();
+		return StmtNodePtr(new ForNode(move(init), move(condition), move(iter), move(body)));
+	}
+	case KEY_WHILE: {
+		assert(0 && "Not complete while!");
+		return nullptr;
+	}
+	case IDENTIFIER:
+		if (CurrentIsType()) {
+			ParseDecl();
 			lexer_.Consume(OP_SEMICOLON);
-			ExprNodePtr condition = ParseExpr();
-			lexer_.Consume(OP_SEMICOLON);
-			ExprNodePtr iter = ParseExpr();
-			lexer_.Consume(OP_RIGHT_PARENTHESIS);
-			StmtNodePtr body = ParseStmt();
-			return StmtNodePtr(new ForNode(move(init), move(condition), move(iter),move(body)));
-		}
-		case KEY_WHILE: {
-			assert(0 && "Not complete while!");
 			return nullptr;
 		}
-		case IDENTIFIER:
-			if (CurrentIsType()) {
-				ParseDecl();
-				lexer_.Consume(OP_SEMICOLON);
-				return nullptr;
-			}
-		default: // Expression
-			StmtNodePtr expr = ParseExpr();
-			lexer_.Consume(OP_SEMICOLON);
-			return move(expr);
+	default: // Expression
+		StmtNodePtr expr = ParseExpr();
+		lexer_.Consume(OP_SEMICOLON);
+		return move(expr);
 	}
 	return nullptr;
 }
@@ -456,8 +456,8 @@ ImmediateNodePtr Compiler::ParseLiteralValue() {
 		symbol = global_scope_->Put(LiteralSymbolPtr(new LiteralSymbol(ptr_scope->Put(move(ptr_string_type))->To<Type>(), lexer_.GoNext().value_)));
 		break;
 	}
-	/*case NULL_REF:
-			return ImmediateNodePtr(new ImmediateNode(type, GetType("ref_void"), lexer_.GoNext().value_));*/
+				 /*case NULL_REF:
+						 return ImmediateNodePtr(new ImmediateNode(type, GetType("ref_void"), lexer_.GoNext().value_));*/
 	default:
 		break;
 	}
@@ -546,10 +546,20 @@ void VariableNode::Gen(FunctionSymbol* function, LocalScope* local_scope, bool r
 			break;
 		default:
 			break;
-		}
+	}
 }
 
 void AssignNode::Gen(FunctionSymbol* function, LocalScope* local_scope, bool right_value) const {
+	switch (token_type_) {
+	case TokenType::OP_ADD_ASSIGN:
+	case TokenType::OP_MINUS_ASSIGN:
+	case TokenType::OP_PRODUCT_ASSIGN:
+	case TokenType::OP_DIVIDE_ASSIGN:
+	case TokenType::OP_MOD_ASSIGN:
+		assert(0 && "+= -= *= /= %= are not implement!");
+	default:
+		break;
+	}
 	right_expr_->Gen(function, local_scope);
 	Type::TypeId type_id = left_var_->type_->type_id_;
 	if (left_var_->token_type_ == NT_ARRAY) {
@@ -588,12 +598,12 @@ void AssignNode::Gen(FunctionSymbol* function, LocalScope* local_scope, bool rig
 void BinaryOpNode::Gen(FunctionSymbol* function, LocalScope* local_scope, bool right_value) const {
 	left_expr_->Gen(function, local_scope);
 	const Type* common_type = Type::Max(left_expr_->type_, right_expr_->type_);
-	if (type_->Is<Bool>())
-		common_type = type_;
-	if (left_expr_->type_ != type_)
+	//if (type_->Is<Bool>())
+	//	common_type = type_;
+	if (left_expr_->type_ != common_type)
 		function->add_code(Type::GetConvertOpcode(left_expr_->type_, common_type));
 	right_expr_->Gen(function, local_scope);
-	if (right_expr_->type_ != type_)
+	if (right_expr_->type_ != common_type)
 		function->add_code(Type::GetConvertOpcode(right_expr_->type_, common_type));
 	int type_id = common_type->type_id_;
 	switch (token_type_) {
@@ -654,25 +664,25 @@ void BinaryOpNode::Gen(FunctionSymbol* function, LocalScope* local_scope, bool r
 		else if (type_id == Type::kDouble)
 			function->add_code(Instruction::kCmpD);
 		else
-			assert("cmp type error!");
+			assert(0 && "cmp type error!");
 		if (token_type_ == OP_GREATER)
 			function->add_code(Instruction::kGt);
-		else if (OP_LESS)
+		else if (token_type_ == OP_LESS)
 			function->add_code(Instruction::kLt);
-		else if (OP_EQUAL)
+		else if (token_type_ == OP_EQUAL)
 			function->add_code(Instruction::kEq);
-		else if (OP_NOT_EQUAL)
+		else if (token_type_ == OP_NOT_EQUAL)
 			function->add_code(Instruction::kNe);
-		else if (OP_GREATER_EQUAL)
+		else if (token_type_ == OP_GREATER_EQUAL)
 			function->add_code(Instruction::kGe);
-		else if (OP_LESS_EQUAL)
+		else if (token_type_ == OP_LESS_EQUAL)
 			function->add_code(Instruction::kLe);
 		return;
 	default:
-		assert("binary operator not implemented");
+		assert(0 && "binary operator not implemented");
 		break;
 	}
-	assert("binary_node gen error, type error!");
+	assert(0 && "binary_node gen error, type error!");
 }
 
 void UnaryOpNode::Gen(FunctionSymbol* function, LocalScope* local_scope, bool right_value) const {
@@ -683,7 +693,7 @@ void UnaryOpNode::Gen(FunctionSymbol* function, LocalScope* local_scope, bool ri
 		//std::clog << "Gen TYPE CAST, " << expr_->type_->name() << " <  " << type_->name() << " " << kInstructionStr[op] << std::endl;
 		if (op != Instruction::kNonCmd)
 			function->add_code(op);
-		else 
+		else
 			assert(expr_->type_ == type_ && "no matched type cast opcode");
 		return;
 	}
@@ -762,19 +772,91 @@ void NewNode::Gen(FunctionSymbol* function, LocalScope* local_scope, bool right_
 }
 
 void ReturnNode::Gen(FunctionSymbol * function, LocalScope * local_scope, bool right_value) const {
+	const Type* ret_type = function->type_->To<Function>()->ret_type_;
+	if (expr_ != nullptr) {
+		expr_->Gen(function, local_scope, right_value);
+		assert(expr_->type_->CouldPromoteTo(ret_type) && "return type not match!");
+		Instruction::Opcode op = Type::GetConvertOpcode(expr_->type_, ret_type);
+		if (op != Instruction::kNonCmd)
+			function->add_code(op);
 
+		if (expr_->type_->type_id_ == Type::kBool || expr_->type_->type_id_ == Type::kChar)
+			function->add_code(Instruction::kReturnC);
+		else if (expr_->type_->type_id_ == Type::kInt)
+			function->add_code(Instruction::kReturnI);
+		else if (expr_->type_->type_id_ == Type::kDouble)
+			function->add_code(Instruction::kReturnD);
+		else if (expr_->type_->Is<Reference>())
+			function->add_code(Instruction::kReturnR);
+		else
+			assert(0 && "Return type invalid!");
+	}
+	else {
+		assert(ret_type == nullptr && "this function's return type is void!");
+		function->add_code(Instruction::kReturn);
+	}
 }
 
 void IfNode::Gen(FunctionSymbol * function, LocalScope * local_scope, bool right_value) const {
-
+	assert(condition_->type_->type_id_ == Type::kBool && "condition's type is not bool!");
+	condition_->Gen(function, local_scope, right_value);
+	function->add_code(Instruction::kIfFalse);
+	int64_t false_instr = (int64_t)function->code_.size() - 1;
+	then_->Gen(function, local_scope, right_value);
+	if (else_ != nullptr) {
+		function->add_code(Instruction::kGoto);
+		int64_t then_break_instr = (int)function->code_.size() - 1;
+		function->code_[false_instr].param_ = (int64_t)function->code_.size(); // backpatch instr tag
+		else_->Gen(function, local_scope, right_value);
+		function->code_[then_break_instr].param_ = (int64_t)function->code_.size(); // backpatch instr tag
+	}
+	else
+		function->code_[false_instr].param_ = (int64_t)function->code_.size(); // backpatch instr tag
 }
 
 void WhileNode::Gen(FunctionSymbol * function, LocalScope * local_scope, bool right_value) const {
 
 }
 
-void ForNode::Gen(FunctionSymbol * function, LocalScope * local_scope, bool right_value) const {
+static void GenStmtNodeCode(FunctionSymbol* function, LocalScope* local_scope, bool right_value, vector<int64_t>& break_instrs, int64_t iter_instr, const StmtNodePtr& stmt) {
+	if (stmt->Is<StmtNode>()) {
+		stmt->Gen(function, local_scope, right_value);
+		if (stmt->Is<BreakNode>())
+			break_instrs.push_back(function->code_.size() - 1);
+		if (stmt->Is<ContinueNode>())
+			function->code_.back().param_ = iter_instr;
+	}
+	else if (stmt->Is<StmtBlockNode>()) {
+		for (const StmtNodePtr& ptr : stmt->To<StmtBlockNode>()->stmts_)
+			GenStmtNodeCode(function, local_scope, right_value, break_instrs, iter_instr, ptr);
+	}
+	else
+		assert(0 && "Stmt type not defined!");
 
+}
+
+void ForNode::Gen(FunctionSymbol * function, LocalScope * local_scope, bool right_value) const {
+	init_->Gen(function, local_scope, right_value);
+	function->add_code(Instruction::kGoto);
+	int64_t init_goto_condition_instr = function->code_.size() - 1;
+
+	int64_t iter_instr = (int64_t)function->code_.size();
+	iter_->Gen(function, local_scope, right_value);
+
+	function->code_[init_goto_condition_instr].param_ = function->code_.size();
+
+	condition_->Gen(function, local_scope, right_value);
+
+	vector<int64_t> break_instrs;
+	function->add_code(Instruction::kIfFalse);
+	break_instrs.push_back(function->code_.size() - 1);
+
+	GenStmtNodeCode(function, local_scope, right_value, break_instrs, iter_instr, body_);
+	function->add_code(Instruction::kGoto, iter_instr);
+
+	// backpatch break_instrs
+	for (int64_t instr : break_instrs)
+		function->code_[instr].param_ = function->code_.size();
 }
 
 void BreakNode::Gen(FunctionSymbol * function, LocalScope * local_scope, bool right_value) const {

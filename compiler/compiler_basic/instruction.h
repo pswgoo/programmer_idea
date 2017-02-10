@@ -90,6 +90,12 @@ const std::string kInstructionStr[] = {
 
 	"kGetStatic", // #constant_pool_index", get static variable.
 	"kStoreStatic", // #constant_pool_index", store static variable.
+
+	"kReturnC",	// return a byte
+	"kReturnI",	// return a integer
+	"kReturnD",	// return a double
+	"kReturnR",	// return a reference
+	"kReturn",	// return void
 };
 
 struct Instruction {
@@ -178,6 +184,12 @@ struct Instruction {
 
 		kGetStatic, // #constant_pool_index, get static variable.
 		kStoreStatic, // #constant_pool_index, store static variable.
+
+		kReturnC,	// return a byte
+		kReturnI,	// return a integer
+		kReturnD,	// return a double
+		kReturnR,	// return a reference
+		kReturn,	// return void
 	};
 
 	Instruction(Opcode op, int64_t param) : op_(op), param_(param) {}

@@ -206,7 +206,6 @@ struct StmtBlockNode : public StmtNode {
 	
 	virtual void Gen(FunctionSymbol* function, LocalScope* local_scope, bool right_value = true) const override;
 
-private:
 	std::vector<StmtNodePtr> stmts_;
 };
 
@@ -220,8 +219,10 @@ struct IfNode : public StmtNode {
 		condition_->Print(oa, padding + kIndent);
 		oa << padding << "then" << std::endl;
 		then_->Print(oa, padding + kIndent);
-		oa << padding << "else" << std::endl;
-		else_->Print(oa, padding + kIndent);
+		if (else_) {
+			oa << padding << "else" << std::endl;
+			else_->Print(oa, padding + kIndent);
+		}
 		oa << padding + "}" << std::endl;
 	}
 

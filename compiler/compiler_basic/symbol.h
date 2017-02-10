@@ -268,7 +268,7 @@ public:
 		scope_->Print(oa, padding);
 		oa << padding << "Code:" << std::endl;
 		for (int i = 0; i < code_.size(); ++i)
-			oa << padding + kIndent << code_[i].ToString() << std::endl;
+			oa << padding + kIndent << i << ":" << code_[i].ToString() << std::endl;
 		oa << padding << "Ast:" << std::endl;
 		body_->Print(oa, padding + kIndent);
 	}
