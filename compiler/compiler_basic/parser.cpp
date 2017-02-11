@@ -95,6 +95,16 @@ StmtNodePtr Compiler::ParseStmt() {
 		lexer_.Consume(OP_SEMICOLON);
 		return StmtNodePtr(new ReturnNode(KEY_RETURN, expr->type_, move(expr)));
 	}
+	case KEY_BREAK: {
+		lexer_.ToNext();
+		lexer_.Consume(OP_SEMICOLON);
+		return StmtNodePtr(new BreakNode());
+	}
+	case KEY_CONTINUE: {
+		lexer_.ToNext();
+		lexer_.Consume(OP_SEMICOLON);
+		return StmtNodePtr(new ContinueNode());
+	}
 	case KEY_IF: {
 		lexer_.ToNext();
 		lexer_.Consume(OP_LEFT_PARENTHESIS);
@@ -760,7 +770,12 @@ void CallNode::Gen(FunctionSymbol* function, LocalScope* local_scope, bool right
 
 void StmtBlockNode::Gen(FunctionSymbol* function, LocalScope* local_scope, bool right_value) const {
 	for (int i = 0; i < stmts_.size(); ++i)
-		stmts_[i]->Gen(function, local_scope);
+		stmts_[i]->Gen(function, local_scope, right_value);
+}
+
+void StmtBlockNode::Gen(FunctionSymbol * function, LocalScope * local_scope, std::vector<int64_t>& break_instrs, std::vector<int64_t>& continue_instrs, bool right_value) const {
+	for (int i = 0; i < stmts_.size(); ++i)
+		stmts_[i]->Gen(function, local_scope, break_instrs, continue_instrs, right_value);
 }
 
 void NewNode::Gen(FunctionSymbol* function, LocalScope* local_scope, bool right_value = true) const {
@@ -798,16 +813,21 @@ void ReturnNode::Gen(FunctionSymbol * function, LocalScope * local_scope, bool r
 }
 
 void IfNode::Gen(FunctionSymbol * function, LocalScope * local_scope, bool right_value) const {
+	vector<int64_t> break_instrs, continue_instrs;
+	Gen(function, local_scope, break_instrs, continue_instrs,right_value);
+}
+
+void IfNode::Gen(FunctionSymbol * function, LocalScope * local_scope, std::vector<int64_t>& break_instrs, std::vector<int64_t>& continue_instrs, bool right_value) const {
 	assert(condition_->type_->type_id_ == Type::kBool && "condition's type is not bool!");
 	condition_->Gen(function, local_scope, right_value);
 	function->add_code(Instruction::kIfFalse);
 	int64_t false_instr = (int64_t)function->code_.size() - 1;
-	then_->Gen(function, local_scope, right_value);
+	then_->Gen(function, local_scope, break_instrs, continue_instrs, right_value);
 	if (else_ != nullptr) {
 		function->add_code(Instruction::kGoto);
 		int64_t then_break_instr = (int)function->code_.size() - 1;
 		function->code_[false_instr].param_ = (int64_t)function->code_.size(); // backpatch instr tag
-		else_->Gen(function, local_scope, right_value);
+		else_->Gen(function, local_scope, break_instrs, continue_instrs, right_value);
 		function->code_[then_break_instr].param_ = (int64_t)function->code_.size(); // backpatch instr tag
 	}
 	else
@@ -819,20 +839,19 @@ void WhileNode::Gen(FunctionSymbol * function, LocalScope * local_scope, bool ri
 }
 
 static void GenStmtNodeCode(FunctionSymbol* function, LocalScope* local_scope, bool right_value, vector<int64_t>& break_instrs, int64_t iter_instr, const StmtNodePtr& stmt) {
-	if (stmt->Is<StmtNode>()) {
+	if (stmt->Is<StmtBlockNode>()) {
+		for (const StmtNodePtr& ptr : stmt->To<StmtBlockNode>()->stmts_)
+			GenStmtNodeCode(function, local_scope, right_value, break_instrs, iter_instr, ptr);
+	}
+	else if (stmt->Is<StmtNode>()) {
 		stmt->Gen(function, local_scope, right_value);
 		if (stmt->Is<BreakNode>())
 			break_instrs.push_back(function->code_.size() - 1);
 		if (stmt->Is<ContinueNode>())
 			function->code_.back().param_ = iter_instr;
 	}
-	else if (stmt->Is<StmtBlockNode>()) {
-		for (const StmtNodePtr& ptr : stmt->To<StmtBlockNode>()->stmts_)
-			GenStmtNodeCode(function, local_scope, right_value, break_instrs, iter_instr, ptr);
-	}
 	else
 		assert(0 && "Stmt type not defined!");
-
 }
 
 void ForNode::Gen(FunctionSymbol * function, LocalScope * local_scope, bool right_value) const {
@@ -851,12 +870,17 @@ void ForNode::Gen(FunctionSymbol * function, LocalScope * local_scope, bool righ
 	function->add_code(Instruction::kIfFalse);
 	break_instrs.push_back(function->code_.size() - 1);
 
-	GenStmtNodeCode(function, local_scope, right_value, break_instrs, iter_instr, body_);
+	vector<int64_t> continue_instrs;
+
+	body_->Gen(function, local_scope, break_instrs, continue_instrs, right_value);
 	function->add_code(Instruction::kGoto, iter_instr);
 
 	// backpatch break_instrs
 	for (int64_t instr : break_instrs)
 		function->code_[instr].param_ = function->code_.size();
+	// backpatch continue_instrs
+	for (int64_t instr : continue_instrs)
+		function->code_[instr].param_ = iter_instr;
 }
 
 void BreakNode::Gen(FunctionSymbol * function, LocalScope * local_scope, bool right_value) const {

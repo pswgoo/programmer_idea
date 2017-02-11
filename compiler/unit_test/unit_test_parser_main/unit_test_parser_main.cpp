@@ -30,7 +30,7 @@ int main() {
 	char d;
 	d = (char)(c+a);
 	c = add(main(), c);
-	
+
 	int f;
 	f = 0;
 	for (a = 3; a < c; a = a+ 1) {
@@ -38,6 +38,8 @@ int main() {
 		int g;
 		g = f -b;
 		b = g + a;
+		if (f >= 100)
+			break;
 	}
 
 	int e[10][50][30];

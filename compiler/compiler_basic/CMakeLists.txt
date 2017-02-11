@@ -10,6 +10,8 @@ set (SRCS
 	instruction.h
 	symbol.cpp
 	symbol.h
+	virtual_machine.cpp
+	virtual_machine.h
 )
 
 add_source_groups(${SRCS})

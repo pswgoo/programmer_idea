@@ -146,8 +146,8 @@ public:
 		SymbolPtr& ptr = symbol_table_[symbol_ptr->name()];
 		if (!ptr) {
 			ptr = std::move(symbol_ptr);
-			if (!ptr->Is<ImmediateSymbol>() && !ptr->Is<LiteralSymbol>())
-				ptr->index_ = top_++;
+			//if ( !ptr->Is<ImmediateSymbol>() && !ptr->Is<LiteralSymbol>())
+			ptr->index_ = top_++;
 		}
 		return ptr.get();
 	}

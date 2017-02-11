@@ -15,6 +15,9 @@ namespace pswgoo {
 struct StmtNode : public AstNode {
 	StmtNode(TokenType token_type = NOT_DEFINED) : AstNode(token_type) {}
 	virtual void Gen(FunctionSymbol* function, LocalScope* local_scope, bool right_value = true) const = 0;
+	virtual void Gen(FunctionSymbol* function, LocalScope* local_scope, std::vector<int64_t>& break_instrs, std::vector<int64_t>& continue_instrs, bool right_value = true) const {
+		Gen(function, local_scope, right_value);
+	}
 };
 typedef std::unique_ptr<StmtNode> StmtNodePtr;
 
@@ -205,6 +208,7 @@ struct StmtBlockNode : public StmtNode {
 	}
 	
 	virtual void Gen(FunctionSymbol* function, LocalScope* local_scope, bool right_value = true) const override;
+	virtual void Gen(FunctionSymbol* function, LocalScope* local_scope, std::vector<int64_t>& break_instrs, std::vector<int64_t>& continue_instrs, bool right_value = true) const override;
 
 	std::vector<StmtNodePtr> stmts_;
 };
@@ -226,7 +230,8 @@ struct IfNode : public StmtNode {
 		oa << padding + "}" << std::endl;
 	}
 
-	void Gen(FunctionSymbol* function, LocalScope* local_scope, bool right_value) const override;
+	virtual void Gen(FunctionSymbol* function, LocalScope* local_scope, bool right_value = true) const override;
+	virtual void Gen(FunctionSymbol* function, LocalScope* local_scope, std::vector<int64_t>& break_instrs, std::vector<int64_t>& continue_instrs, bool right_value = true) const override;
 	ExprNodePtr condition_;
 	StmtNodePtr then_;
 	StmtNodePtr else_;
@@ -249,7 +254,7 @@ struct ForNode : public StmtNode {
 		oa << padding + "}" << std::endl;
 	}
 
-	void Gen(FunctionSymbol* function, LocalScope* local_scope, bool right_value) const override;
+	virtual void Gen(FunctionSymbol* function, LocalScope* local_scope, bool right_value = true) const override;
 	StmtNodePtr init_;
 	ExprNodePtr condition_;
 	ExprNodePtr iter_;
@@ -259,7 +264,7 @@ struct ForNode : public StmtNode {
 struct WhileNode : public StmtNode {
 	WhileNode() : StmtNode(NT_WHILE) {};
 
-	void Gen(FunctionSymbol* function, LocalScope* local_scope, bool right_value) const override;
+	virtual void Gen(FunctionSymbol* function, LocalScope* local_scope, bool right_value = true) const override;
 	ExprNodePtr condition_;
 	StmtNodePtr body_;
 };
@@ -268,12 +273,20 @@ struct BreakNode : public StmtNode {
 	BreakNode() : StmtNode(KEY_BREAK) {};
 
 	void Gen(FunctionSymbol* function, LocalScope* local_scope, bool right_value) const override;
+	void Gen(FunctionSymbol* function, LocalScope* local_scope, std::vector<int64_t>& break_instrs, std::vector<int64_t>& continue_instrs, bool right_value) const override {
+		Gen(function, local_scope, right_value);
+		break_instrs.push_back(function->code_.size() - 1);
+	}
 };
 
 struct ContinueNode : public StmtNode {
 	ContinueNode() : StmtNode(KEY_CONTINUE) {};
 
-	void Gen(FunctionSymbol* function, LocalScope* local_scope, bool right_value) const override;
+	virtual void Gen(FunctionSymbol* function, LocalScope* local_scope, bool right_value = true) const override;
+	virtual void Gen(FunctionSymbol* function, LocalScope* local_scope, std::vector<int64_t>& break_instrs, std::vector<int64_t>& continue_instrs, bool right_value) const override {
+		Gen(function, local_scope, right_value);
+		continue_instrs.push_back(function->code_.size() - 1);
+	}
 };
 
 class Compiler : public StmtBlockNode {
