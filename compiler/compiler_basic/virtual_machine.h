@@ -48,6 +48,7 @@ public:
 
 class VirtualMachine {
 public:
+	void Init(const Scope* scope);
 
 	void LoadConst();
 

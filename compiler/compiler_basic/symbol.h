@@ -155,6 +155,8 @@ public:
 		return const_cast<Symbol*>(const_cast<const Scope*>(this)->Get(name));
 	}
 
+	const std::unordered_map<std::string, SymbolPtr>& symbol_table() const { return symbol_table_; }
+
 	const Scope* parent() const { return parent_; }
 	Scope* parent() { return parent_; }
 	int depth() const { return depth_; }
