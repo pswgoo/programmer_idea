@@ -3,6 +3,7 @@
 #include "lexer.h"
 #include "symbol.h"
 #include "instruction.h"
+#include "parser.h"
 
 #include <cstdint>
 #include <vector>
@@ -42,6 +43,9 @@ class Frame {
 public:
 	
 
+	ConstPool* ptr_const_pool_;
+	FunctionNode *ptr_function_;
+	std::vector<char> data_stack_;
 	int64_t next_instr_;
 	std::vector<char> local_stack_;
 };
@@ -60,7 +64,6 @@ private:
 private:
 	int64_t instr_pc_;
 	std::vector<std::unique_ptr<Frame>> frame_stack_;
-	std::vector<char> data_stack_;
 	ConstPool const_pool_;
 };
 
