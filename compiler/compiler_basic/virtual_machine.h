@@ -16,19 +16,24 @@
 namespace pswgoo {
 
 struct FunctionNode {
-	Function function_type_;
+	std::string name_;
+	const Function* function_type_;
 	std::vector<Instruction> code_;
-	int local_stack_size_;
-	std::vector<int> local_variable_offset_;
+	int64_t local_stack_size_;
+	std::vector<int64_t> local_variable_offset_;
 };
 
 class ConstPool {
 public:
-	enum ConstPoolNodeType { kCharNode, kIntNode, kDoubleNode, kStringNode, kFunctionNode };
+	enum ConstPoolNodeType { kNonNode, kCharNode, kIntNode, kDoubleNode, kStringNode, kFunctionNode };
 	struct ConstPoolNode {
 		ConstPoolNodeType type_;
 		int offset_;
 	};
+
+	int AddSymbol(const Symbol* symbol);
+
+	void Print(std::ostream& oa, const std::string& padding) const;
 
 	std::vector<ConstPoolNode> all_constants_;
 
@@ -42,9 +47,18 @@ public:
 class Frame {
 public:
 	
+	void Push(const std::vector<char>& buffer) {
+		data_stack_.insert(data_stack_.end(), buffer.begin(), buffer.end());
+	}
+	std::vector<char> Pop(int n) {
+		std::vector<char>::iterator s = data_stack_.begin() + (data_stack_.size() - n);
+		std::vector<char> ret(s, data_stack_.end());
+		data_stack_.resize(data_stack_.size() - n);
+		return ret;
+	}
 
 	ConstPool* ptr_const_pool_;
-	FunctionNode *ptr_function_;
+	const FunctionNode *ptr_function_;
 	std::vector<char> data_stack_;
 	int64_t next_instr_;
 	std::vector<char> local_stack_;
@@ -54,16 +68,30 @@ class VirtualMachine {
 public:
 	void Init(const Scope* scope);
 
-	void LoadConst();
-
 	void Run();
 
+	void Print(std::ostream& oa, const std::string& padding) const;
+
 private:
-	void PushFrame();
+	void Push(const std::vector<char>& buffer) {
+		frame_stack_.back()->Push(buffer);
+	}
+	std::vector<char> Pop(int n) {
+		return frame_stack_.back()->Pop(n);
+	}
+
+	void PushFrame(const FunctionNode& function);
 	void PopFrame();
+
+	static std::vector<char> ToBuffer(char ch);
+	static std::vector<char> ToBuffer(int64_t num);
+	static std::vector<char> ToBuffer(double num);
+	static int64_t ToInt(const std::vector<char>& buffer);
+	static double ToDouble(const std::vector<char>& buffer);
 
 private:
 	int64_t instr_pc_;
+	const std::vector<Instruction>* ptr_code_;
 	std::vector<std::unique_ptr<Frame>> frame_stack_;
 	ConstPool const_pool_;
 };

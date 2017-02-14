@@ -304,6 +304,8 @@ public:
 
 	void Gen();
 
+	const ScopePtr& global_scope() const { return global_scope_; }
+
 	virtual void Print(std::ostream& oa, const std::string& padding) const override {
 		for (const FunctionSymbol* func : all_functions_) {
 			func->Print(oa, padding);

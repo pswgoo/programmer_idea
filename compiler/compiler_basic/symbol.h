@@ -193,6 +193,7 @@ public:
 				ptr->index_ = top_++;
 				ptr->local_offset_ = stack_top_;
 				stack_top_ += ptr->To<VariableSymbol>()->type_->SizeOf();
+				max_stack_size_ = std::max(max_stack_size_, stack_top_ - stack_start_);
 			}
 			else
 				std::clog << "Warning: put non-variable symbol to local scope";
@@ -202,20 +203,20 @@ public:
 
 	// cannot parallel
 	void add_child_scope(std::unique_ptr<LocalScope>&& child_scope) {
-		max_stack_size_ = std::max(max_stack_size_, top_ - stack_start_ + child_scope->max_stack_size_);
+		max_stack_size_ = std::max(max_stack_size_, stack_top_ - stack_start_ + child_scope->max_stack_size_);
 		top_ = child_scope->top_;
 		child_scopes_.emplace_back(std::move(child_scope));
 	}
 
 	virtual void Print(std::ostream& oa, const std::string& padding)  const override {
 		std::vector<Symbol*> all_symbols = GetLocalVariables();
-		std::sort(all_symbols.begin(), all_symbols.end(), [](const Symbol* p1, const Symbol* p2) {return p1->index_ < p2->index_; });
-		oa << padding << "Local Scope: " << std::endl;
+		oa << padding << "Local Scope: " << max_stack_size_ << std::endl;
 		for (int i = 0; i < all_symbols.size(); ++i)
 			oa << padding + kIndent << all_symbols[i]->To<VariableSymbol>()->type_->name() << "\t" << all_symbols[i]->index_ << "\t" << all_symbols[i]->local_offset_ << std::endl;
 	}
 
-protected:
+	int64_t max_stack_size() const { return max_stack_size_; }
+
 	std::vector<Symbol*> GetLocalVariables() const {
 		std::vector<Symbol*> ret;
 		for (const auto& pr : symbol_table_)
@@ -225,6 +226,7 @@ protected:
 			std::vector<Symbol*> tmp = child_scopes_[i]->GetLocalVariables();
 			ret.insert(ret.end(), tmp.begin(), tmp.end());
 		}
+		std::sort(ret.begin(), ret.end(), [](const Symbol* p1, const Symbol* p2) {return p1->index_ < p2->index_; });
 		return ret;
 	}
 

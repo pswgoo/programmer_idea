@@ -7,7 +7,6 @@ namespace pswgoo {
 
 const std::string kInstructionStr[] = {
 	"kNonCmd",
-	"kRefA",		//引用数组，取栈顶 8 byte 作为下标
 	"kNewA",		//创建数组，接受一个int64作为dimention参数. 所有数组都拍平成为一维数组
 	"kNew",		//创建引用，接受一个 符号表下标参数
 
@@ -101,7 +100,6 @@ const std::string kInstructionStr[] = {
 struct Instruction {
 	enum Opcode {
 		kNonCmd,
-		kRefA,		//引用数组，取栈顶 8 byte 作为下标
 		kNewA,		// #constant_pool_index, count -> ArrayRef; Create a array reference.
 		kNew,		//创建引用，接受一个 符号表下标参数
 

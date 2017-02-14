@@ -3,6 +3,7 @@
 
 #include "compiler/compiler_basic/lexer.h"
 #include "compiler/compiler_basic/parser.h"
+#include "compiler/compiler_basic/virtual_machine.h"
 
 using namespace std;
 using namespace pswgoo;
@@ -58,6 +59,11 @@ int main() {
 		parser.Gen();
 		ofstream fout("ast.txt");
 		parser.Print(fout,"");
+
+		VirtualMachine vm;
+		vm.Init(parser.global_scope().get());
+		vm.Print(fout, "");
+
 		//ofstream fout2("ast2.txt");
 
 	} catch (exception e) {
