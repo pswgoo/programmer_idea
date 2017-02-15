@@ -18,7 +18,9 @@ set(CMAKE_LIBRARY_PATH ${CMAKE_LIBRARY_PATH} ${BOOST_LIBRARYDIR})
 
 find_package(Boost REQUIRED system thread date_time regex serialization)
 
+
 if (MSVC)
+	add_definitions(-D_CRT_SECURE_NO_WARNINGS)
 	set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /WX")
 	set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} /WX")
 endif()

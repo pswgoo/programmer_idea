@@ -30,6 +30,11 @@ int ConstPool::AddSymbol(const Symbol* symbol) {
 		}
 		return 1;
 	}
+	else if (symbol->Is<Type>()) {
+		all_constants_[symbol->index_] = { kTypeNode, (int)type_pool_.size() };
+		type_pool_.push_back(symbol->To<Type>());
+		return 1;
+	}
 	else if (symbol->Is<FunctionSymbol>()) {
 		const FunctionSymbol* func_symbol = symbol->To<FunctionSymbol>();
 		FunctionNode function;
@@ -48,7 +53,7 @@ int ConstPool::AddSymbol(const Symbol* symbol) {
 }
 
 void ConstPool::Print(std::ostream& oa, const std::string& padding) const {
-	static const vector<string> kNodeDesc = { "NonNode", "CharNode", "IntNode", "DoubleNode", "StringNode", "FunctionNode" };
+	static const vector<string> kNodeDesc = { "NonNode", "CharNode", "IntNode", "DoubleNode", "StringNode", "FunctionNode", "kTypeNode" };
 
 	for (int i = 0; i < all_constants_.size(); ++i) {
 		if (all_constants_[i].type_ == kNonNode)
@@ -65,6 +70,8 @@ void ConstPool::Print(std::ostream& oa, const std::string& padding) const {
 			oa << "\t" << string_pool_[all_constants_[i].offset_] << endl;
 		if (all_constants_[i].type_ == kFunctionNode)
 			oa << "\t" << function_pool_[all_constants_[i].offset_].name_ << endl;
+		if (all_constants_[i].type_ == kTypeNode)
+			oa << "\t" << type_pool_[all_constants_[i].offset_]->name() << endl;
 	}
 }
 
@@ -124,7 +131,7 @@ void VirtualMachine::Print(std::ostream& oa, const std::string& padding) const {
 
 void VirtualMachine::PushFrame(const FunctionNode& function) {
 	unique_ptr<Frame> frame(new Frame);
-	frame->next_instr_ = instr_pc_;
+	frame->next_instr_ = instr_pc_ + 1;
 	instr_pc_ = 0;
 	frame->ptr_const_pool_ = &const_pool_;
 	frame->ptr_function_ = &function;
@@ -134,16 +141,21 @@ void VirtualMachine::PushFrame(const FunctionNode& function) {
 		param_stack_size = (int)function.local_variable_offset_[param_num];
 
 	// copy function params to local_stack
-	vector<char> params = frame_stack_.back()->Pop(param_stack_size);
+	vector<char> params;
+	if (param_stack_size)
+		frame_stack_.back()->Pop(param_stack_size);
 	frame->local_stack_.resize(function.local_stack_size_);
 	for (int i = 0; i < params.size(); ++i)
 		frame->local_stack_[i] = params[i];
 
 	frame_stack_.emplace_back(move(frame));
-	ptr_code_ = &(frame->ptr_function_->code_);
+	ptr_code_ = &(frame_stack_.back()->ptr_function_->code_);
 }
 
 void VirtualMachine::PopFrame() {
+	if (frame_stack_.size() == 1)
+		return;
+
 	int ret_size = 0;
 	if (frame_stack_.back()->ptr_function_->function_type_->ret_type_)
 		ret_size = (int)frame_stack_.back()->ptr_function_->function_type_->ret_type_->SizeOf();
@@ -156,17 +168,68 @@ void VirtualMachine::PopFrame() {
 	ptr_code_ = &(frame_stack_.back()->ptr_function_->code_);
 }
 
-void VirtualMachine::Run() {
+char VirtualMachine::GetLocalChar(int64_t offset) {
+	Frame* frame = frame_stack_.back().get();
+	return frame->local_stack_[offset];
+}
+int64_t VirtualMachine::GetLocalInt(int64_t offset) {
+	Frame* frame = frame_stack_.back().get();
+	return *reinterpret_cast<int64_t*>(&frame->local_stack_[offset]);
+}
+double VirtualMachine::GetLocalDouble(int64_t offset) {
+	Frame* frame = frame_stack_.back().get();
+	return *reinterpret_cast<double*>(&frame->local_stack_[offset]);
+}
+void VirtualMachine::StoreLocalChar(int64_t offset, char value) {
+	Frame* frame = frame_stack_.back().get();
+	frame->local_stack_[offset] = value;
+}
+void VirtualMachine::StoreLocalInt(int64_t offset, int64_t value) {
+	Frame* frame = frame_stack_.back().get();
+	vector<char> buffer = ToBuffer(value);
+	for (int i = 0; i < buffer.size(); ++i)
+		frame->local_stack_[offset + i] = buffer[i];
+}
+void VirtualMachine::StoreLocalDouble(int64_t offset, double value) {
+	Frame* frame = frame_stack_.back().get();
+	vector<char> buffer = ToBuffer(value);
+	for (int i = 0; i < buffer.size(); ++i)
+		frame->local_stack_[offset + i] = buffer[i];
+}
+
+int64_t VirtualMachine::Run() {
 	while (true) {
 		if ((int64_t)ptr_code_->size() <= instr_pc_ && frame_stack_.size() > 1)
 			PopFrame();
 		else if ((int64_t)ptr_code_->size() <= instr_pc_ && frame_stack_.size() <= 1)
 			break;
 
+		bool instr_pc_flag = false;
 		switch (Instruction::Opcode op = (*ptr_code_)[instr_pc_].op_) {
-		case Instruction::kNewA:
-		case Instruction::kNew:
-
+		case Instruction::kNewA: {
+			int64_t offset = (*ptr_code_)[instr_pc_].param_;
+			const Type* type = const_pool_.GetType(offset);
+			int64_t count = ToInt(Pop(kSizeOf[Type::kInt]));
+			void* ptr = nullptr;
+			if (type->type_id_ == Type::kChar || type->type_id_ == Type::kBool)
+				ptr = new char[count];
+			else if (type->type_id_ == Type::kInt)
+				ptr = new int64_t[count];
+			else if (type->type_id_ == Type::kDouble)
+				ptr = new double[count];
+			else if (type->type_id_ == Type::kReference || type->type_id_ == Type::kString)
+				ptr = new void*[count];
+			else
+				assert("Invalid type for new array.");
+			//clog << type->name() << endl;
+			memset(ptr, 0, type->SizeOf() * count);
+			Push(ToBuffer(int64_t(ptr)));
+			break;
+		}
+		case Instruction::kNew: {
+			assert(0 && "Not implement.");
+			break;
+		}
 		case Instruction::kAddC:
 		case Instruction::kMulC:
 		case Instruction::kDivC:
@@ -261,33 +324,275 @@ void VirtualMachine::Run() {
 			break;
 		}
 		case Instruction::kGt: {
-			char lhs = Pop(kSizeOf[Type::kInt]).front();
+			char lhs = Pop(kSizeOf[Type::kChar]).front();
 			char result = char(lhs == 1 ? 1 : 0);
 			Push(ToBuffer(result));
 			break;
 		}
 		case Instruction::kLe:{
-			char lhs = Pop(kSizeOf[Type::kInt]).front();
+			char lhs = Pop(kSizeOf[Type::kChar]).front();
 			char result = char(lhs == -1 || lhs == 0 ? 1 : 0);
 			Push(ToBuffer(result));
 			break;
 		}
 		case Instruction::kGe:{
-			char lhs = Pop(kSizeOf[Type::kInt]).front();
+			char lhs = Pop(kSizeOf[Type::kChar]).front();
 			char result = char(lhs == 1 || lhs == 0 ? 1 : 0);
 			Push(ToBuffer(result));
 			break;
 		}
 		case Instruction::kNe: {
-			char lhs = Pop(kSizeOf[Type::kInt]).front();
+			char lhs = Pop(kSizeOf[Type::kChar]).front();
 			char result = char(lhs != 0 ? 1 : 0);
 			Push(ToBuffer(result));
 			break;
 		}
-		default:
+		case Instruction::kIfFalse: {
+			char lhs = Pop(kSizeOf[Type::kChar]).front();
+			if (lhs == 0) {
+				instr_pc_ = (*ptr_code_)[instr_pc_].param_;
+				instr_pc_flag = true;
+			}
 			break;
 		}
+		case Instruction::kGoto: {
+			instr_pc_ = (*ptr_code_)[instr_pc_].param_;
+			instr_pc_flag = true;
+			break;
+		}
+		case Instruction::kCall: {
+			int64_t offset = (*ptr_code_)[instr_pc_].param_;
+			const ConstPool::ConstPoolNode& node = const_pool_.all_constants_[offset];
+			assert(node.type_ == ConstPool::kFunctionNode && "Instruction kCall must operate function object.");
+			PushFrame(const_pool_.function_pool_[node.offset_]);
+			instr_pc_flag = true;
+			break;
+		}
+		case Instruction::kC2I: {
+			char lhs = Pop(kSizeOf[Type::kChar]).front();
+			Push(ToBuffer(int64_t(lhs)));
+			break;
+		}
+		case Instruction::kC2D: {
+			char lhs = Pop(kSizeOf[Type::kChar]).front();
+			Push(ToBuffer(double(lhs)));
+			break;
+		}
+		case Instruction::kI2C: {
+			int64_t lhs = ToInt(Pop(kSizeOf[Type::kInt]));
+			Push(ToBuffer(char(lhs)));
+			break;
+		}
+		case Instruction::kI2D: {
+			int64_t lhs = ToInt(Pop(kSizeOf[Type::kInt]));
+			Push(ToBuffer(double(lhs)));
+			break;
+		}
+		case Instruction::kD2C: {
+			double lhs = ToDouble(Pop(kSizeOf[Type::kDouble]));
+			Push(ToBuffer(char(lhs)));
+			break;
+		}
+		case Instruction::kD2I: {
+			double lhs = ToDouble(Pop(kSizeOf[Type::kDouble]));
+			Push(ToBuffer(int64_t(lhs)));
+			break;
+		}
+		case Instruction::kNegC: {
+			char lhs = Pop(kSizeOf[Type::kChar]).front();
+			Push(ToBuffer(char(-lhs)));
+			break;
+		}
+		case Instruction::kNegI: {
+			int64_t lhs = ToInt(Pop(kSizeOf[Type::kInt]));
+			Push(ToBuffer(-lhs));
+			break;
+		}
+		case Instruction::kNegD: {
+			double lhs = ToDouble(Pop(kSizeOf[Type::kDouble]));
+			Push(ToBuffer(-lhs));
+			break;
+		}
+		case Instruction::kAnd: {
+			char lhs = Pop(kSizeOf[Type::kChar]).front();
+			char rhs = Pop(kSizeOf[Type::kChar]).front();
+			if (lhs && rhs)
+				Push(ToBuffer(char(1)));
+			else
+				Push(ToBuffer(char(0)));
+			break;
+		}
+		case Instruction::kOr: {
+			char lhs = Pop(kSizeOf[Type::kChar]).front();
+			char rhs = Pop(kSizeOf[Type::kChar]).front();
+			if (lhs || rhs)
+				Push(ToBuffer(char(1)));
+			else
+				Push(ToBuffer(char(0)));
+			break;
+		}
+		case Instruction::kNot: {
+			char lhs = Pop(kSizeOf[Type::kChar]).front();
+			if (lhs)
+				Push(ToBuffer(char(0)));
+			else
+				Push(ToBuffer(char(1)));
+			break;
+		}
+		case Instruction::kPutC: {
+			char result = (char)(*ptr_code_)[instr_pc_].param_;
+			Push(ToBuffer(result));
+			break;
+		}
+		case Instruction::kPutI: {
+			int64_t result = (int64_t)(*ptr_code_)[instr_pc_].param_;
+			Push(ToBuffer(result));
+			break;
+		}
+		case Instruction::kPutD: {
+			double result = (double)(*ptr_code_)[instr_pc_].param_;
+			Push(ToBuffer(result));
+			break;
+		}
+		case Instruction::kPutN: {
+			Push(ToBuffer(int64_t(0)));
+			break;
+		}
+		case Instruction::kLoadC: {
+			int64_t offset = (*ptr_code_)[instr_pc_].param_;
+			char value = GetLocalChar(offset);
+			Push(ToBuffer(value));
+			break;
+		}
+		case Instruction::kLoadI:
+		case Instruction::kLoadR: {
+			int64_t offset = (*ptr_code_)[instr_pc_].param_;
+			int64_t value = GetLocalInt(offset);
+			Push(ToBuffer(value));
+			break;
+		}
+		case Instruction::kLoadD: {
+			int64_t offset = (*ptr_code_)[instr_pc_].param_;
+			double value = GetLocalDouble(offset);
+			Push(ToBuffer(value));
+			break;
+		}
+		case Instruction::kStoreC: {
+			int64_t offset = (*ptr_code_)[instr_pc_].param_;
+			StoreLocalChar(offset, Pop(kSizeOf[Type::kChar]).front());
+			break;
+		}
+		case Instruction::kStoreI:
+		case Instruction::kStoreR: {
+			int64_t offset = (*ptr_code_)[instr_pc_].param_;
+			StoreLocalInt(offset, ToInt(Pop(kSizeOf[Type::kInt])));
+			break;
+		}
+		case Instruction::kStoreD: {
+			int64_t offset = (*ptr_code_)[instr_pc_].param_;
+			StoreLocalDouble(offset, ToDouble(Pop(kSizeOf[Type::kDouble])));
+			break;
+		}
+		case Instruction::kALoadC: {
+			int64_t ref = ToInt(Pop(kSizeOf[Type::kInt]));
+			int64_t index = ToInt(Pop(kSizeOf[Type::kInt]));
+			char* ptr = (char*)ref;
+			Push(ToBuffer(ptr[index]));
+			break;
+		}
+		case Instruction::kALoadI:
+		case Instruction::kALoadR: {
+			int64_t ref = ToInt(Pop(kSizeOf[Type::kInt]));
+			int64_t index = ToInt(Pop(kSizeOf[Type::kInt]));
+			int64_t* ptr = (int64_t*)ref;
+			Push(ToBuffer(ptr[index]));
+			break;
+		}
+		case Instruction::kALoadD: {
+			int64_t ref = ToInt(Pop(kSizeOf[Type::kInt]));
+			int64_t index = ToInt(Pop(kSizeOf[Type::kInt]));
+			double* ptr = (double*)ref;
+			Push(ToBuffer(ptr[index]));
+			break;
+		}
+		case Instruction::kAStoreC: {
+			int64_t ref = ToInt(Pop(kSizeOf[Type::kInt]));
+			int64_t index = ToInt(Pop(kSizeOf[Type::kInt]));
+			char value = Pop(kSizeOf[Type::kChar]).front();
+			char* ptr = (char*)ref;
+			ptr[index] = value;
+			break;
+		}
+		case Instruction::kAStoreI:
+		case Instruction::kAStoreR: {
+			int64_t ref = ToInt(Pop(kSizeOf[Type::kInt]));
+			int64_t index = ToInt(Pop(kSizeOf[Type::kInt]));
+			int64_t value = ToInt(Pop(kSizeOf[Type::kInt]));
+			int64_t* ptr = (int64_t*)ref;
+			ptr[index] = value;
+			break;
+		}
+		case Instruction::kAStoreD: {
+			int64_t ref = ToInt(Pop(kSizeOf[Type::kInt]));
+			int64_t index = ToInt(Pop(kSizeOf[Type::kInt]));
+			double value = ToDouble(Pop(kSizeOf[Type::kDouble]));
+			double* ptr = (double*)ref;
+			ptr[index] = value;
+			break;
+		}
+		case Instruction::kLdc: {
+			int64_t offset = (*ptr_code_)[instr_pc_].param_;
+			assert(const_pool_.all_constants_[offset].type_ == ConstPool::kStringNode && "Instruction::kLdc must operate string.");
+			string str = const_pool_.string_pool_[const_pool_.all_constants_[offset].offset_];
+			char *ptr = new char[str.size() + 1];
+			strncpy(ptr, str.c_str(), str.size());
+			ptr[str.size()] = '\0';
+			Push(ToBuffer((int64_t)ptr));
+			break;
+		}
+		case Instruction::kGetStatic: {
+			int64_t offset = (*ptr_code_)[instr_pc_].param_;
+			const ConstPool::ConstPoolNode& node = const_pool_.all_constants_[offset];
+			if (node.type_ == ConstPool::kCharNode)
+				Push(ToBuffer(const_pool_.GetChar(offset)));
+			else if (node.type_ == ConstPool::kIntNode)
+				Push(ToBuffer(const_pool_.GetInt(offset)));
+			else if (node.type_ == ConstPool::kDoubleNode)
+				Push(ToBuffer(const_pool_.GetDouble(offset)));
+			else
+				assert(0 && "Invalid operand type for Instruction::kGetStatic.");
+			break;
+		}
+		case Instruction::kStoreStatic: {
+			int64_t offset = (*ptr_code_)[instr_pc_].param_;
+			const ConstPool::ConstPoolNode& node = const_pool_.all_constants_[offset];
+			if (node.type_ == ConstPool::kCharNode)
+				const_pool_.StoreChar(offset, Pop(kSizeOf[Type::kChar]).front());
+			else if (node.type_ == ConstPool::kIntNode)
+				const_pool_.StoreInt(offset, ToInt(Pop(kSizeOf[Type::kInt])));
+			else if (node.type_ == ConstPool::kDoubleNode)
+				const_pool_.StoreDouble(offset, ToDouble(Pop(kSizeOf[Type::kDouble])));
+			else
+				assert(0 && "Invalid operand type for Instruction::kGetStatic.");
+			break;
+		}
+		case Instruction::kReturnC: 
+		case Instruction::kReturnI: 
+		case Instruction::kReturnR:
+		case Instruction::kReturnD:
+		case Instruction::kReturn: {
+			PopFrame();
+			instr_pc_flag = true;
+			break;
+		}
+		default:
+			assert(0 && "Instruction not defined.");
+			break;
+		}
+		if (!instr_pc_flag)
+			instr_pc_++;
 	}
+	return ToInt(Pop(kSizeOf[Type::kInt]));
 }
 
 } // namespace pswgoo

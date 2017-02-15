@@ -30,11 +30,11 @@ int main() {
 	c = 5;
 	char d;
 	d = (char)(c+a);
-	c = add(main(), c);
+	c = add(b, c);
 
 	int f;
 	f = 0;
-	for (a = 3; a < c; a = a+ 1) {
+	for (a = 3; a < 100; a = a+ 1) {
 		f = f + a;
 		int g;
 		g = f -b;
@@ -63,6 +63,7 @@ int main() {
 		VirtualMachine vm;
 		vm.Init(parser.global_scope().get());
 		vm.Print(fout, "");
+		clog << "Main: " << vm.Run();
 
 		//ofstream fout2("ast2.txt");
 

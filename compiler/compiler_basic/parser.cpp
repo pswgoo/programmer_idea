@@ -782,8 +782,10 @@ void NewNode::Gen(FunctionSymbol* function, LocalScope* local_scope, bool right_
 	const Type* ref_type = type_->To<Reference>()->ref_type_;
 	if (ref_type->Is<Array>()) {
 		function->add_code(Instruction::kPutI, ref_type->To<Array>()->SizeOf() / ref_type->To<Array>()->UnitSize());
-		function->add_code(Instruction::kNewA, ref_type->index_);
+		function->add_code(Instruction::kNewA, ref_type->To<Array>()->UnitType()->index_);
 	}
+	else
+		assert(0 && "New only implement array.");
 }
 
 void ReturnNode::Gen(FunctionSymbol * function, LocalScope * local_scope, bool right_value) const {

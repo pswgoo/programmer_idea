@@ -315,10 +315,13 @@ public:
 
 	virtual int64_t SizeOf() const override { return element_type_->SizeOf() * length_; }
 	int64_t UnitSize() const {
+		return UnitType()->SizeOf();
+	}
+	const Type* UnitType() const {
 		const Type* tmp = element_type_;
 		while (tmp->Is<Array>())
 			tmp = tmp->To<Array>()->element_type_;
-		return tmp->SizeOf();
+		return tmp;
 	}
 
 	const Type* element_type_;

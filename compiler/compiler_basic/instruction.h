@@ -2,12 +2,16 @@
 
 #include <cstdint>
 #include <string>
+//
+//#ifndef _CRT_SECURE_NO_WARNINGS
+//#define _CRT_SECURE_NO_WARNINGS
+//#endif
 
 namespace pswgoo {
 
 const std::string kInstructionStr[] = {
 	"kNonCmd",
-	"kNewA",		//创建数组，接受一个int64作为dimention参数. 所有数组都拍平成为一维数组
+	"kNewA",	// #constant_pool_index, count -> ArrayRef; Create a array reference.
 	"kNew",		//创建引用，接受一个 符号表下标参数
 
 	"kAddC",
@@ -178,7 +182,7 @@ struct Instruction {
 		kAStoreD,
 		kAStoreR,
 
-		kLdc,		// #constant_pool_index, if it is a string index, push the run-time reference to the operand stack.
+		kLdc,		// #constant_pool_index. For a string index, push the run-time reference to the operand stack.
 
 		kGetStatic, // #constant_pool_index, get static variable.
 		kStoreStatic, // #constant_pool_index, store static variable.
