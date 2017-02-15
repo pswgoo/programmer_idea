@@ -143,7 +143,7 @@ void VirtualMachine::PushFrame(const FunctionNode& function) {
 	// copy function params to local_stack
 	vector<char> params;
 	if (param_stack_size)
-		frame_stack_.back()->Pop(param_stack_size);
+		params = frame_stack_.back()->Pop(param_stack_size);
 	frame->local_stack_.resize(function.local_stack_size_);
 	for (int i = 0; i < params.size(); ++i)
 		frame->local_stack_[i] = params[i];
@@ -153,8 +153,10 @@ void VirtualMachine::PushFrame(const FunctionNode& function) {
 }
 
 void VirtualMachine::PopFrame() {
-	if (frame_stack_.size() == 1)
+	if (frame_stack_.size() == 1) {
+		instr_pc_++;
 		return;
+	}
 
 	int ret_size = 0;
 	if (frame_stack_.back()->ptr_function_->function_type_->ret_type_)
@@ -235,8 +237,8 @@ int64_t VirtualMachine::Run() {
 		case Instruction::kDivC:
 		case Instruction::kModC:
 		case Instruction::kSubC: {
-			char lhs = Pop(kSizeOf[Type::kChar]).front();
 			char rhs = Pop(kSizeOf[Type::kChar]).front();
+			char lhs = Pop(kSizeOf[Type::kChar]).front();
 			char result = 0;
 			if (op == Instruction::kAddC)
 				result = lhs + rhs;
@@ -256,8 +258,8 @@ int64_t VirtualMachine::Run() {
 		case Instruction::kMulI:
 		case Instruction::kDivI:
 		case Instruction::kModI:{
-			int64_t lhs = ToInt(Pop(kSizeOf[Type::kInt]));
 			int64_t rhs = ToInt(Pop(kSizeOf[Type::kInt]));
+			int64_t lhs = ToInt(Pop(kSizeOf[Type::kInt]));
 			int64_t result = 0;
 			if (op == Instruction::kAddI)
 				result = lhs + rhs;
@@ -276,8 +278,8 @@ int64_t VirtualMachine::Run() {
 		case Instruction::kSubD:
 		case Instruction::kMulD:
 		case Instruction::kDivD:{
-			double lhs = ToDouble(Pop(kSizeOf[Type::kDouble]));
 			double rhs = ToDouble(Pop(kSizeOf[Type::kDouble]));
+			double lhs = ToDouble(Pop(kSizeOf[Type::kDouble]));
 			double result = 0;
 			if (op == Instruction::kAddD)
 				result = lhs + rhs;
@@ -291,22 +293,22 @@ int64_t VirtualMachine::Run() {
 			break;
 		}
 		case Instruction::kCmpC: {
-			char lhs = Pop(kSizeOf[Type::kChar]).front();
 			char rhs = Pop(kSizeOf[Type::kChar]).front();
+			char lhs = Pop(kSizeOf[Type::kChar]).front();
 			char result = char(lhs > rhs ? 1 : (lhs < rhs ? -1 : 0));
 			Push(ToBuffer(result));
 			break;
 		}
 		case Instruction::kCmpI: {
-			int64_t lhs = ToInt(Pop(kSizeOf[Type::kInt]));
 			int64_t rhs = ToInt(Pop(kSizeOf[Type::kInt]));
+			int64_t lhs = ToInt(Pop(kSizeOf[Type::kInt]));
 			char result = char(lhs > rhs ? 1 : (lhs < rhs ? -1 : 0));
 			Push(ToBuffer(result));
 			break;
 		}
 		case Instruction::kCmpD: {
-			double lhs = ToDouble(Pop(kSizeOf[Type::kDouble]));
 			double rhs = ToDouble(Pop(kSizeOf[Type::kDouble]));
+			double lhs = ToDouble(Pop(kSizeOf[Type::kDouble]));
 			char result = char(lhs > rhs ? 1 : (lhs < rhs ? -1 : 0));
 			Push(ToBuffer(result));
 			break;
@@ -414,8 +416,8 @@ int64_t VirtualMachine::Run() {
 			break;
 		}
 		case Instruction::kAnd: {
-			char lhs = Pop(kSizeOf[Type::kChar]).front();
 			char rhs = Pop(kSizeOf[Type::kChar]).front();
+			char lhs = Pop(kSizeOf[Type::kChar]).front();
 			if (lhs && rhs)
 				Push(ToBuffer(char(1)));
 			else
@@ -423,8 +425,8 @@ int64_t VirtualMachine::Run() {
 			break;
 		}
 		case Instruction::kOr: {
-			char lhs = Pop(kSizeOf[Type::kChar]).front();
 			char rhs = Pop(kSizeOf[Type::kChar]).front();
+			char lhs = Pop(kSizeOf[Type::kChar]).front();
 			if (lhs || rhs)
 				Push(ToBuffer(char(1)));
 			else

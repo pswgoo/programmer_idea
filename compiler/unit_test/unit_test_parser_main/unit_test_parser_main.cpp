@@ -48,7 +48,7 @@ int main() {
 	e[2][1][3] = 342;
 	b = e[2][1][add(d, c)] + d;
 
-	return fab(5);
+	return fab(7) + fab(5);
 }
 
 	)DELIM";
@@ -63,7 +63,7 @@ int main() {
 		VirtualMachine vm;
 		vm.Init(parser.global_scope().get());
 		vm.Print(fout, "");
-		clog << "Main: " << vm.Run();
+		clog << "Main: " << vm.Run() << endl;
 
 		//ofstream fout2("ast2.txt");
 

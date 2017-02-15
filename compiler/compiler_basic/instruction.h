@@ -172,12 +172,12 @@ struct Instruction {
 		kStoreD,
 		kStoreR,
 
-		kALoadC,	// (arrayref, index) -> value
+		kALoadC,	// (arrayref, index) -> value;  arrayref is on the stack top.
 		kALoadI,	
 		kALoadD,
 		kALoadR,
 
-		kAStoreC,	// (arrayref, index, value) -> 
+		kAStoreC,	// (arrayref, index, value) -> ;   arrayref is on the stack top. 
 		kAStoreI,
 		kAStoreD,
 		kAStoreR,

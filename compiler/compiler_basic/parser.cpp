@@ -763,8 +763,14 @@ void ArrayNode::Gen(FunctionSymbol* function, LocalScope* local_scope, bool righ
 }
 
 void CallNode::Gen(FunctionSymbol* function, LocalScope* local_scope, bool right_value) const {
-	for (int i = 0; i < params_.size(); ++i)
+	for (int i = 0; i < params_.size(); ++i) {
 		params_[i]->Gen(function, local_scope);
+		if (params_[i]->type_ != function_->type_->To<Function>()->param_types_[i]) {
+			Instruction::Opcode op = Type::GetConvertOpcode(params_[i]->type_, function_->type_->To<Function>()->param_types_[i]);
+			assert(op != Instruction::kNonCmd && "Function paramater type not match!");
+			function->add_code(op);
+		}
+	}
 	function->add_code(Instruction::kCall, function_->index_);
 }
 
