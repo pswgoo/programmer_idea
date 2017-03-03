@@ -9,7 +9,7 @@ using namespace std;
 using namespace pswgoo;
 
 int main(int argc, char** argv) {
-	string test_str = R"DELIM(
+	string test_str0 = R"DELIM(
 
 int fab(int n) {
 	if (n <= 2)
@@ -48,14 +48,49 @@ int main() {
 	e[2][1][3] = 342;
 	b = e[2][1][add(d, c)] + d;
 
-	return fab(7) + fab(5);
+	return fab(30);
+}
+
+	)DELIM";
+
+	string test_str1 = R"DELIM(
+
+int sum(int s, int e) {
+	int i;
+	int sum;
+	sum = 0;
+	i = 0;
+	for (i = s; i <= e; i = i +1)
+		sum = sum + i;
+
+	return sum;
+}
+
+int main() {
+	return sum(1, 100000);
+}
+
+	)DELIM";
+
+	string test_str2 = R"DELIM(
+
+int main() {
+	int arr[100];
+	int i;
+	i = 0;
+	arr = new int[100];
+	arr[0] = 0;
+	for (i = 1; i < 100; i = i+ 1)
+		arr[i] = i + arr[i-1];
+
+	return arr[100-1];
 }
 
 	)DELIM";
 
 	try {
 		Compiler parser;
-		parser.Parse(test_str);
+		parser.Parse(test_str2);
 		parser.Gen();
 		ofstream fout("ast.txt");
 		parser.Print(fout,"");
