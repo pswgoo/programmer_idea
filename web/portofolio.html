@@ -1,0 +1,170 @@
+<html>
+
+<head>
+	<link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/font-awesome/4.4.0/css/font-awesome.min.css">
+
+	<title> PSWGOO's Portofolio </title>
+
+	<style>
+	body{
+		margin: 0px 10% 0px 10%;
+		padding: 0px 0px 0px 0px;
+		min-width: 400px;
+	}
+	#about {
+		margin: 0px;
+		padding: 10px;
+		background: #888;
+	}
+	#portofolio {
+		background: #EEE;
+	}
+	#contact{
+		background-image: url(http://www.arsenal.com/assets/_files/scaled/1080x340/jul_16/gun__1467841103_hero_fixtures_1080x340.jpg.jpeg);
+		height: 340px;
+		color: #FFF;
+	}
+	.flex-container {
+		display: flex;
+		width: 100%;
+		flex-wrap: wrap;
+		justify-content: space-around;
+		align-items: center;
+		margin: 20px;
+	}
+	.flex-item {
+		width: 40%;
+		min-width: 300px;
+	}
+	.flex-container img {
+		width: 100%;
+	}
+	.usr-info-grid {
+		display: grid;
+		grid-template-columns: 1fr 1fr;
+		grid-template-rows: 50px 50px;
+	}
+	header{
+		margin: 0px;
+		background: #722872;
+		color: #888;
+		margin: 0px;
+	}
+	nav a {
+		margin: 5px;
+		font-size: 20px;
+		color: #888;
+		text-decoration: none;
+	}
+	nav a:hover {
+		color: #eee;
+	}
+	footer {
+		margin-top: 15px;
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		justify-content: space-around;
+		background-color: #8280A2;
+	}
+	.footer-item {
+		width: 40%;
+	}
+	.footer-copy-right {
+		display: block;
+		width: 100%;
+		text-align: center;
+	}
+	</style>
+
+</head>
+
+<body>
+	<header>
+		<div class="flex-container">
+			<h3>Navigation</h3>
+			<nav>
+				<a href="#about">About</a>
+				<a href="#portofolio">Portofolio</a>
+				<a href="#contact">Contact</a>
+			</nav>
+		</div>
+	</header>
+	<section id="about">
+		<div class="flex-container">
+			<div class="flex-item">
+				<p> Arsenal Football Club is a professional football club based in Highbury, London, that plays in the Premier League, the top flight of English football. The club has won 13 League titles, 12 FA Cups (a joint record), two League Cups, 14 FA Community Shields, one UEFA Cup Winners' Cup and one Inter-Cities Fairs Cup.</p>
+			</div>
+			<div class="flex-item">
+				<img src="http://files.techcrunch.cn/2015/10/henry-arsenal11.jpg?w=620" />
+			</div>
+		</div>
+	</section>
+	<section id="portofolio">
+		<h1 style="text-align: center"> Portofolio </h1>
+		<div class="flex-container">
+			<div class="flex-item">
+				<img src="http://www.arsenal.com/assets/_files/scaled/324x182/may_14/gun__1401456346_wenger_facup.jpg" />
+				<h5> THE WENGER YEARS </h5>
+				<p> Following George Graham’s departure, Arsenal were entrusted to an unknown Frenchman who would change the Club forever.</p>
+			</div>
+
+			<div class="flex-item">
+				<img class="flex-item" src="http://www.arsenal.com/assets/_files/scaled/324x182/jan_13/gun__1358327384_wilson_anderlecht1970.jpg" />
+				<h5> 1970 FAIRS CUP FINAL </h5>
+				<p> After 17 years without a trophy, the glory days returned to Highbury with a dramatic victory over Belgian side Anderlecht in the 1970 Fairs Cup Final.</p>
+			</div>
+			<div class="flex-item">
+				<img class="flex-item" src="http://www.arsenal.com/assets/_files/scaled/324x182/jan_13/gun__1358789250_heroes_together_emirates.jpg" />
+				<h5> HEROES TOGETHER </h5>
+				<p>Perhaps the most striking change since the 'Arsenalisation' of Emirates Stadium is the imagery on the outside walls, depicting 32 Arsenal greats 'embracing' the ground and its fans.</p>
+			</div>
+			<div class="flex-item">
+				<img class="flex-item" src="http://www.arsenal.com/assets/_files/scaled/324x182/jan_13/gun__1357901750_highbury_5.jpg" />
+				<h5>ARSENAL STADIUM, HIGHBURY</h5>
+				<p>Arsenal Stadium, known almost universally by its original name of Highbury, was the Club’s home from 1913 until 2006. Find out more about 'The Home of Football'</p>
+			</div>
+		</div>
+	</section>
+	<section id="contact" >
+		<div class="flex-container">
+		<form class="flex-item">
+			<div>
+				<div style="display: flex; height: 30px; margin: 5px;">
+					<p style="width:40%;">First Name:</p>
+					<input  style="flex-grow:3; background: #EEE" type="text" name="First Name" placeholder="First Name" />
+				</div>
+				<div style="display: flex; height: 30px; margin: 5px;">
+					<p style="width:40%;">Last Name:</p>
+					<input style="flex-grow:3; background: #EEE;" type="text" name="Last Name" placeholder="Second Name"/>
+				</div>
+				<div style="display: flex; height: 30px; margin: 5px;">
+					<p style="width:40%;">Phone:</p>
+					<input style="flex-grow:3; background: #EEE;" type="text" placeholder="Phone Number"/>
+				</div>
+			</div>
+			<input type="submit" style="display: block; width: 100%; margin-top:5%" name="submit" value="Submit"/>
+		<p> TICKETS & MEMBERSHIP
+Join as an Arsenal Member and receive access to a range of exclusive benefits such as priority ticket access, subscription to Arsenal Player, a welcome pack and access to members' events with the first team squad. If you join as a Junior Gunner you have the chance of being a Matchday mascot or ball boy.</p>
+		</form>
+		<div class="flex-item">
+		</div>
+		</div>
+	</section>
+	<footer>
+		<div class="footer-item">
+			<h3>ABOUT THIS PAGE</h3>
+			<p> Made by pswgoo.</p>
+		</div>
+		<div class="footer-item">
+			<h3>ABOUT THIS WEB</h3>
+			<ul style="list-style-type: none;">
+				<li ><a style="display:inline-block;" href="https://www.linkedin.com" target="_blank"><i class="fa fa-linkedin"></i></a></li>
+				<li ><a style="display:inline-block;" href="https://github.com" target="_blank"><i class="fa fa-github"></i></a></li>
+			</ul>
+		</div>
+		<p class="footer-copy-right"> <script>document.write(new Date().getFullYear())</script>. All Rights Reversed </p>
+	</footer>
+</body>
+
+</html>
