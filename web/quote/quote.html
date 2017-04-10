@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.7/css/bootstrap.min.css" integrity="sha384-BVYiiSIFeK1dGmJRAkycuHAHRg32OmUcww7on3RYdg4Va+PmSTsz/K68vbdEjh4u" crossorigin="anonymous">
+	<link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/font-awesome/4.7.0/css/font-awesome.min.css">
+	<script
+  src="https://code.jquery.com/jquery-3.2.1.min.js"
+  integrity="sha256-hwg4gsxgFZhOsEEamdOYGBf13FyQuiTwlAQgxVSNgt4="
+  crossorigin="anonymous"></script>
+	<title> Random Quote </title>
+
+	<style>
+		.quote-box {
+			margin: 100px 35% 0px 35%;
+			padding-top: 10px;
+			padding-left: 20px;
+			padding-right: 20px;
+			background-color: #F5F5DC;
+    		border-radius: 5px;
+    		color: #FF7F50;
+		}
+		h1 {
+			text-align: center;
+		}
+		body {
+			background-color: #FF7F50;
+		}
+	</style>
+</head>
+
+<body>
+
+	<h1> Random Quotes Rewritten</h1>
+	<div class="quote-box">
+		<p><i class="fa fa-quote-left fa-2x" aria-hidden="true"></i> Here is a quote</p>
+		<h3> Author</h3>
+	</div>
+
+	<script type="text/javascript">
+		$(window).on("load", function() { 
+			$.ajax({
+				url: "http://api.forismatic.com/api/1.0/?method=getQuote&format=json&lang=en",
+				type: "Get",
+				crossDomain: true,
+				xhrFields: {
+					withCredentials: true
+				},
+				cache: false,
+				success: function(json) {
+				  //$("body").append(a.quoteText + "<p>" + a.quoteAuthor + "</p>")
+				  $("body").append("<p>" + JSON.stringify(json) + "</p>");}
+				});
+		});
+	</script>
+
+</body>
+</html>
