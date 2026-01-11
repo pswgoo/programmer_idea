@@ -29,7 +29,7 @@ namespace q::market {
 
 ReplayEngine::ReplayEngine(ReplayConfig cfg) : cfg_(std::move(cfg)) {}
 
-std::size_t ReplayEngine::run(const std::function<void(const Tick&)>& on_tick, q::LatencyRecorder& latency, std::size_t sample_every) {
+std::size_t ReplayEngine::run(const std::function<void(const Tick&)>& on_tick, q::LatencyRecorder* latency, std::size_t sample_every) {
   q::CsvReader reader(cfg_.path);
   if (!reader.good()) {
     q::log::warn("Failed to open replay file.");
@@ -84,11 +84,11 @@ std::size_t ReplayEngine::run(const std::function<void(const Tick&)>& on_tick, q
 
     // measure callback latency
     // 抽样测 callback 延迟
-    if (sample_every > 0 && ((n % sample_every) == 0)) {
+    if (latency && sample_every > 0 && ((n % sample_every) == 0)) {
       const auto t0 = q::now();
       on_tick(t);
       const auto t1 = q::now();
-      latency.add_ns(std::chrono::duration_cast<std::chrono::nanoseconds>(t1 - t0).count());
+      latency->add_ns(std::chrono::duration_cast<std::chrono::nanoseconds>(t1 - t0).count());
     } else {
       on_tick(t);
     }

@@ -24,7 +24,7 @@ public:
 
   // on_tick：用户处理 tick 的回调
   // 返回：处理的 tick 数量
-  std::size_t run(const std::function<void(const Tick&)>& on_tick, q::LatencyRecorder& latency, std::size_t sample_every);
+  std::size_t run(const std::function<void(const Tick&)>& on_tick, q::LatencyRecorder* latency, std::size_t sample_every);
 
 private:
   ReplayConfig cfg_;

@@ -1,158 +1,205 @@
 #include <algorithm>
 #include <chrono>
+#include <cstdlib>
 #include <iostream>
 #include <string>
+#include <thread>
+#include <atomic>
 #include <vector>
 
 #include "book/flat_l2_book.hpp"
-#include "book/l2_book.hpp"      // map版：q::book::L2Book
+#include "book/l2_book.hpp"     // map版：q::book::L2Book
 #include "common/clock.hpp"
+#include "common/latency.hpp"
 #include "common/log.hpp"
+#include "common/spsc_ring.hpp"
+#include "common/backoff.hpp"
 #include "market/replay.hpp"
-
-struct RunResult {
-  std::size_t ticks{};
-  double seconds{};
-  double rate{}; // msg/s
-  q::LatencyRecorder::Stats lat{};
-};
 
 static void usage() {
   std::cout
     << "Usage:\n"
-    << "  ./quant_min --file <csv> [--speed 0|0.1|1|10] [--book map|flat]\n"
-    << "            [--warmup N] [--repeat N] [--sample K] [--print-every N]\n\n"
+    << "  ./quant_min --file <csv> [--speed 0|0.1|1] [--book map|flat]\n"
+    << "            [--pipeline direct|spsc] [--ring <pow2>]\n"
+    << "            [--sample K] [--print-every N]\n\n"
     << "Notes:\n"
-    << "  --speed 0     : fastest (no pacing)\n"
-    << "  --speed 1     : realtime pacing\n"
-    << "  --speed 0.1   : 10x faster than realtime\n"
-    << "  --book map    : std::map baseline\n"
-    << "  --book flat   : flat vector cache-friendly\n"
-    << "  --warmup N    : warmup runs not included in summary (default 1)\n"
-    << "  --repeat N    : measured runs in summary (default 7)\n"
-    << "  --sample K    : sample latency every K ticks (default 100). 0 disables latency.\n"
-    << "                 (Sampling reduces now() overhead and stabilizes p99/p999.)\n";
+    << "  --pipeline direct : single-thread replay->book (baseline)\n"
+    << "  --pipeline spsc   : two-thread replay (producer) -> ring -> book (consumer)\n"
+    << "  --ring            : ring capacity, must be power-of-two (default 1048576)\n"
+    << "  --sample K        : sample book update latency every K ticks in consumer (default 100)\n"
+    << "                     0 disables latency measurement.\n"
+    << "  For container comparison, prefer: --speed 0\n";
 }
 
-static double median(std::vector<double> v) {
-  if (v.empty()) return 0.0;
-  std::sort(v.begin(), v.end());
-  const std::size_t m = v.size() / 2;
-  if (v.size() % 2 == 1) return v[m];
-  return 0.5 * (v[m - 1] + v[m]);
-}
+struct PipeStats {
+  std::size_t ticks{0};
+  double seconds{0.0};
+  double rate{0.0};
 
-static double minv(const std::vector<double>& v) {
-  return v.empty() ? 0.0 : *std::min_element(v.begin(), v.end());
-}
+  std::size_t ring_max_depth{0};
+  std::size_t ring_full_count{0};
 
-static double maxv(const std::vector<double>& v) {
-  return v.empty() ? 0.0 : *std::max_element(v.begin(), v.end());
-}
+  q::LatencyRecorder::Stats book_lat{};
+};
 
 template <class BookT>
-static RunResult run_once(const q::market::ReplayConfig& cfg, std::size_t sample_every) {
+static PipeStats run_direct(const q::market::ReplayConfig& cfg, std::size_t sample_every) {
   BookT book;
-  q::LatencyRecorder latency;
+  q::LatencyRecorder lat;
 
   q::market::ReplayEngine engine(cfg);
 
+  std::size_t n = 0;
   const auto wall0 = q::now();
-  const auto n = engine.run(
-      [&](const q::market::Tick& t) { book.on_tick(t); },
-      latency,
-      sample_every);
+  n = engine.run([&](const q::market::Tick& t) {
+      book.on_tick(t);
+    },
+    (sample_every > 0 ? &lat : nullptr),
+    sample_every
+  );
   const auto wall1 = q::now();
 
-  const auto wall_ns =
-      std::chrono::duration_cast<std::chrono::nanoseconds>(wall1 - wall0).count();
+  const auto wall_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(wall1 - wall0).count();
   const double secs = static_cast<double>(wall_ns) / 1e9;
   const double rate = secs > 0.0 ? static_cast<double>(n) / secs : 0.0;
 
-  RunResult rr{};
-  rr.ticks = n;
-  rr.seconds = secs;
-  rr.rate = rate;
-  rr.lat = latency.compute(); // if sample_every==0, count will be 0
-  return rr;
+  PipeStats ps{};
+  ps.ticks = n;
+  ps.seconds = secs;
+  ps.rate = rate;
+  ps.book_lat = lat.compute();
+  return ps;
 }
 
 template <class BookT>
-static int benchmark(const q::market::ReplayConfig& cfg,
-                     int warmup,
-                     int repeat,
-                     std::size_t sample_every,
-                     const std::string& label) {
-  // Warmup
-  for (int i = 0; i < warmup; ++i) {
-    (void)run_once<BookT>(cfg, sample_every);
-  }
+static PipeStats run_spsc(const q::market::ReplayConfig& cfg,
+                          std::size_t ring_cap_pow2,
+                          std::size_t sample_every) {
+  using Tick = q::market::Tick;
 
-  std::vector<double> rates;
-  std::vector<double> p50s, p99s, p999s, maxs;
+  q::SpscRing<Tick> ring(ring_cap_pow2);
 
-  for (int i = 0; i < repeat; ++i) {
-    auto r = run_once<BookT>(cfg, sample_every);
+  std::atomic<bool> producer_done{false};
 
-    rates.push_back(r.rate);
+  std::atomic<std::size_t> produced{0};
+  std::atomic<std::size_t> consumed{0};
+  std::atomic<std::size_t> ring_full_count{0};
+  std::atomic<std::size_t> ring_max_depth{0};
 
-    if (sample_every > 0) {
-      p50s.push_back(static_cast<double>(r.lat.p50));
-      p99s.push_back(static_cast<double>(r.lat.p99));
-      p999s.push_back(static_cast<double>(r.lat.p999));
-      maxs.push_back(static_cast<double>(r.lat.max));
+  q::LatencyRecorder book_lat;
+
+  // Consumer thread: pop -> book update
+  BookT book;
+  std::thread consumer([&] {
+    Tick t{};
+    std::size_t local_consumed = 0;
+    IdleBackoff idleBackoff(2500, 2500, 100, 2000);
+
+    while (true) {
+      if (ring.pop(t)) {
+        idleBackoff.reset();
+        // measure book update latency (sampling)
+        if (sample_every > 0 && ((local_consumed % sample_every) == 0)) {
+          const auto t0 = q::now();
+          book.on_tick(t);
+          const auto t1 = q::now();
+          book_lat.add_ns(std::chrono::duration_cast<std::chrono::nanoseconds>(t1 - t0).count());
+        } else {
+          book.on_tick(t);
+        }
+
+        ++local_consumed;
+        consumed.store(local_consumed, std::memory_order_relaxed);
+        continue;
+      }
+
+      // ring empty
+      if (producer_done.load(std::memory_order_acquire) && ring.empty()) {
+        break;
+      }
+
+      // backoff: yield to reduce busy wait impact
+      idleBackoff.idle();
     }
+  });
 
-    std::cout << "[" << label << " run " << (i + 1) << "/" << repeat << "] "
-              << "ticks=" << r.ticks << " "
-              << "time=" << r.seconds << "s "
-              << "rate=" << r.rate << " msg/s";
+  // Producer thread: replay -> push
+  std::thread producer([&] {
+    q::market::ReplayEngine engine(cfg);
 
-    if (sample_every > 0) {
-      std::cout << "  lat(ns):"
-                << " p50=" << r.lat.p50
-                << " p99=" << r.lat.p99
-                << " p999=" << r.lat.p999
-                << " max=" << r.lat.max
-                << " (samples=" << r.lat.count << ")";
-    } else {
-      std::cout << "  lat(ns): disabled (--sample 0)";
-    }
+    std::size_t local_produced = 0;
 
-    std::cout << "\n";
+    // Use ReplayEngine as reader + pacing; callback only pushes to ring.
+    // Disable latency measurement in producer.
+    (void)engine.run([&](const Tick& t) {
+      // backpressure: wait until there is space
+      while (!ring.push(t)) {
+        ring_full_count.fetch_add(1, std::memory_order_relaxed);
+        // update max depth too (optional)
+        const auto d = ring.size_approx();
+        auto cur = ring_max_depth.load(std::memory_order_relaxed);
+        while (d > cur && !ring_max_depth.compare_exchange_weak(cur, d, std::memory_order_relaxed)) {}
+        std::this_thread::yield();
+      }
+
+      ++local_produced;
+      produced.store(local_produced, std::memory_order_relaxed);
+
+      // update max depth
+      const auto d = ring.size_approx();
+      auto cur = ring_max_depth.load(std::memory_order_relaxed);
+      while (d > cur && !ring_max_depth.compare_exchange_weak(cur, d, std::memory_order_relaxed)) {}
+    }, nullptr, 0);
+
+    producer_done.store(true, std::memory_order_release);
+  });
+
+  const auto wall0 = q::now();
+  producer.join();
+  consumer.join();
+  const auto wall1 = q::now();
+
+  const auto n = consumed.load(std::memory_order_relaxed);
+  const auto wall_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(wall1 - wall0).count();
+  const double secs = static_cast<double>(wall_ns) / 1e9;
+  const double rate = secs > 0.0 ? static_cast<double>(n) / secs : 0.0;
+
+  PipeStats ps{};
+  ps.ticks = n;
+  ps.seconds = secs;
+  ps.rate = rate;
+  ps.ring_full_count = ring_full_count.load(std::memory_order_relaxed);
+  ps.ring_max_depth  = ring_max_depth.load(std::memory_order_relaxed);
+  ps.book_lat = book_lat.compute();
+  return ps;
+}
+
+static void print_stats(const std::string& label, const PipeStats& s, bool latency_enabled) {
+  std::cout << "\n=== " << label << " ===\n";
+  std::cout << "ticks=" << s.ticks << " time=" << s.seconds << "s rate=" << s.rate << " msg/s\n";
+  if (label.find("spsc") != std::string::npos) {
+    std::cout << "ring_max_depth=" << s.ring_max_depth
+              << " ring_full_count=" << s.ring_full_count << "\n";
   }
-
-  std::cout << "\n=== SUMMARY (" << label << ") ===\n";
-  std::cout << "rate msg/s: median=" << median(rates)
-            << " min=" << minv(rates)
-            << " max=" << maxv(rates) << "\n";
-
-  if (sample_every > 0) {
-    std::cout << "p50  ns  : median=" << median(p50s)
-              << " min=" << minv(p50s)
-              << " max=" << maxv(p50s) << "\n";
-    std::cout << "p99  ns  : median=" << median(p99s)
-              << " min=" << minv(p99s)
-              << " max=" << maxv(p99s) << "\n";
-    std::cout << "p999 ns  : median=" << median(p999s)
-              << " min=" << minv(p999s)
-              << " max=" << maxv(p999s) << "\n";
-    std::cout << "max  ns  : median=" << median(maxs)
-              << " min=" << minv(maxs)
-              << " max=" << maxv(maxs) << "\n";
+  if (latency_enabled) {
+    std::cout << "book_update_latency(ns): samples=" << s.book_lat.count
+              << " p50=" << s.book_lat.p50
+              << " p99=" << s.book_lat.p99
+              << " p999=" << s.book_lat.p999
+              << " max=" << s.book_lat.max
+              << "\n";
+  } else {
+    std::cout << "book_update_latency: disabled (--sample 0)\n";
   }
-
-  std::cout << "\n";
-  return 0;
 }
 
 int main(int argc, char** argv) {
   std::string file = "data/sample_ticks.csv";
   double speed = 0.0;
   std::string book_type = "flat";
-  int warmup = 1;
-  int repeat = 7;
-  std::size_t sample_every = 100; // 1% sampling by default
+  std::string pipeline = "direct";
+  std::size_t ring_cap = 1u << 20; // 1048576
+  std::size_t sample_every = 100;
   bool print_every = false;
   std::int64_t print_interval = 100000;
 
@@ -161,9 +208,9 @@ int main(int argc, char** argv) {
     if (a == "--file" && i + 1 < argc) file = argv[++i];
     else if (a == "--speed" && i + 1 < argc) speed = std::stod(argv[++i]);
     else if (a == "--book" && i + 1 < argc) book_type = argv[++i];
-    else if (a == "--warmup" && i + 1 < argc) warmup = std::stoi(argv[++i]);
-    else if (a == "--repeat" && i + 1 < argc) repeat = std::stoi(argv[++i]);
-    else if (a == "--sample" && i + 1 < argc) sample_every = static_cast<std::size_t>(std::stoll(argv[++i]));
+    else if (a == "--pipeline" && i + 1 < argc) pipeline = argv[++i];
+    else if (a == "--ring" && i + 1 < argc) ring_cap = static_cast<std::size_t>(std::stoull(argv[++i]));
+    else if (a == "--sample" && i + 1 < argc) sample_every = static_cast<std::size_t>(std::stoull(argv[++i]));
     else if (a == "--print-every" && i + 1 < argc) { print_every = true; print_interval = std::stoll(argv[++i]); }
     else if (a == "--help") { usage(); return 0; }
     else {
@@ -173,8 +220,8 @@ int main(int argc, char** argv) {
     }
   }
 
-  if (warmup < 0 || repeat <= 0) {
-    q::log::warn("--warmup must be >= 0 and --repeat must be > 0");
+  if (!q::is_power_of_two(ring_cap)) {
+    q::log::warn("--ring must be a power-of-two, e.g. 65536, 1048576, 4194304");
     return 1;
   }
 
@@ -185,19 +232,32 @@ int main(int argc, char** argv) {
     .print_interval = print_interval
   };
 
-  // 对容器/数据结构 benchmark：强烈建议 speed=0
-  if (speed != 0.0) {
-    q::log::warn("For data structure benchmark, consider using --speed 0 to reduce pacing noise.");
-  }
+  const bool latency_enabled = (sample_every > 0);
 
+  // Dispatch by book type and pipeline
   if (book_type == "map") {
-    return benchmark<q::book::L2Book>(cfg, warmup, repeat, sample_every, "map");
-  }
-  if (book_type == "flat") {
-    return benchmark<q::book::FlatL2Book>(cfg, warmup, repeat, sample_every, "flat");
+    if (pipeline == "direct") {
+      auto s = run_direct<q::book::L2Book>(cfg, sample_every);
+      print_stats("direct + map", s, latency_enabled);
+      return 0;
+    } else if (pipeline == "spsc") {
+      auto s = run_spsc<q::book::L2Book>(cfg, ring_cap, sample_every);
+      print_stats("spsc + map", s, latency_enabled);
+      return 0;
+    }
+  } else if (book_type == "flat") {
+    if (pipeline == "direct") {
+      auto s = run_direct<q::book::FlatL2Book>(cfg, sample_every);
+      print_stats("direct + flat", s, latency_enabled);
+      return 0;
+    } else if (pipeline == "spsc") {
+      auto s = run_spsc<q::book::FlatL2Book>(cfg, ring_cap, sample_every);
+      print_stats("spsc + flat", s, latency_enabled);
+      return 0;
+    }
   }
 
-  q::log::warn("Unknown --book type. Use map|flat.");
+  q::log::warn("Invalid combination. Use --book map|flat and --pipeline direct|spsc");
   usage();
   return 1;
 }
