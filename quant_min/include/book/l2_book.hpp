@@ -11,11 +11,47 @@ namespace q::book {
 // 中低频最小实现：用 map 聚合价位（后续可替换 flat_map / 数组）
 class L2Book {
 public:
-  void on_tick(const q::market::Tick& t) {
-    auto& side_map = (t.side == q::market::Side::Bid) ? bids_ : asks_;
-    // 这里把 tick 当作“该价位的增量量”来演示（真实行情一般有更复杂的增量/快照逻辑）
-    side_map[t.price] += t.qty;
-    if (side_map[t.price] <= 0) side_map.erase(t.price);
+  void clear() {
+    bids_.clear();
+    asks_.clear();
+  }
+
+  void apply_snapshot_level(q::market::Side side, std::int64_t price, std::int64_t qty) {
+    auto& m = (side == q::market::Side::Bid) ? bids_ : asks_;
+    if (qty <= 0) m.erase(price);
+    else m[price] = qty;
+  }
+
+  bool apply_incremental(q::market::Side side, std::int64_t price, std::int64_t qty, q::market::Action action) {
+    bool ok = true;
+    if (side != q::market::Side::Bid && side != q::market::Side::Ask) return false;
+
+    auto& m = (side == q::market::Side::Bid) ? bids_ : asks_;
+    auto it = m.find(price);
+    const bool exists = (it != m.end());
+
+    switch (action) {
+      case q::market::Action::New:
+        if (exists) ok = false;
+        if (qty > 0) m[price] = qty;
+        else ok = false;
+        break;
+      case q::market::Action::Change:
+        if (!exists) ok = false;
+        if (qty <= 0) {
+          if (exists) m.erase(it);
+        } else {
+          m[price] = qty;
+        }
+        break;
+      case q::market::Action::Delete:
+        if (!exists) ok = false;
+        if (exists) m.erase(it);
+        break;
+      default:
+        return false;
+    }
+    return ok;
   }
 
   struct Top {
@@ -28,22 +64,15 @@ public:
     Top t{};
     if (bids_.empty() || asks_.empty()) return t;
 
-    // bids: highest price
-    auto itb = bids_.rbegin();
-    t.bid_px = itb->first;
-    t.bid_qty = itb->second;
-
-    // asks: lowest price
-    auto ita = asks_.begin();
-    t.ask_px = ita->first;
-    t.ask_qty = ita->second;
-
+    auto itb = bids_.rbegin();     // highest bid
+    auto ita = asks_.begin();      // lowest ask
+    t.bid_px = itb->first; t.bid_qty = itb->second;
+    t.ask_px = ita->first; t.ask_qty = ita->second;
     t.valid = true;
     return t;
   }
 
 private:
-  // price -> qty
   std::map<std::int64_t, std::int64_t> bids_;
   std::map<std::int64_t, std::int64_t> asks_;
 };

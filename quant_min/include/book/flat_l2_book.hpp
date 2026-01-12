@@ -36,12 +36,64 @@ public:
     asks_.reserve(reserve_levels_per_side);
   }
 
-  void on_tick(const q::market::Tick& t) {
-    if (t.side == q::market::Side::Bid) {
-      upsert_level(bids_, /*is_bid=*/true, t.price, t.qty);
-    } else {
-      upsert_level(asks_, /*is_bid=*/false, t.price, t.qty);
+  void clear() {
+    bids_.clear();
+    asks_.clear();
+  }
+
+  // 快照：设置该价位 qty（qty<=0 则删除）
+  void apply_snapshot_level(q::market::Side side, std::int64_t price, std::int64_t qty) {
+    if (side == q::market::Side::Bid) {
+      set_level(bids_, true, price, qty);
+    } else if (side == q::market::Side::Ask) {
+      set_level(asks_, false, price, qty);
     }
+  }
+
+  // 增量：New/Change/Delete
+  // 返回 false 表示发现“语义异常”（例如 Delete 不存在、New 已存在等），但仍尽量做鲁棒更新
+  bool apply_incremental(q::market::Side side, std::int64_t price, std::int64_t qty, q::market::Action action) {
+    bool ok = true;
+    if (side != q::market::Side::Bid && side != q::market::Side::Ask) return false;
+
+    auto& vec = (side == q::market::Side::Bid) ? bids_ : asks_;
+    const bool is_bid = (side == q::market::Side::Bid);
+
+    // locate
+    auto it = lower_bound_price(vec, is_bid, price);
+    const bool exists = (it != vec.end() && it->price == price);
+
+    switch (action) {
+      case q::market::Action::New:
+        if (exists) ok = false; // unexpected
+        if (qty > 0) {
+          if (exists) it->qty = qty;
+          else vec.insert(it, Level{price, qty});
+        } else {
+          // qty<=0 for New: treat as no-op but mark anomaly
+          ok = false;
+        }
+        break;
+
+      case q::market::Action::Change:
+        if (!exists) ok = false; // unexpected
+        if (qty <= 0) {
+          if (exists) vec.erase(it);
+        } else {
+          if (exists) it->qty = qty;
+          else vec.insert(it, Level{price, qty}); // be robust
+        }
+        break;
+
+      case q::market::Action::Delete:
+        if (!exists) ok = false; // unexpected
+        if (exists) vec.erase(it);
+        break;
+
+      default:
+        return false;
+    }
+    return ok;
   }
 
   struct Top {
@@ -53,47 +105,35 @@ public:
   Top top() const {
     Top out{};
     if (bids_.empty() || asks_.empty()) return out;
-
-    out.bid_px  = bids_[0].price;
-    out.bid_qty = bids_[0].qty;
-    out.ask_px  = asks_[0].price;
-    out.ask_qty = asks_[0].qty;
+    out.bid_px = bids_[0].price; out.bid_qty = bids_[0].qty;
+    out.ask_px = asks_[0].price; out.ask_qty = asks_[0].qty;
     out.valid = true;
     return out;
   }
 
-  std::size_t bid_levels() const { return bids_.size(); }
-  std::size_t ask_levels() const { return asks_.size(); }
-
 private:
-  static void upsert_level(std::vector<Level>& side, bool is_bid,
-                           std::int64_t price, std::int64_t delta_qty) {
-    // 二分找插入点/命中点
-    auto it = std::lower_bound(
+  static std::vector<Level>::iterator lower_bound_price(std::vector<Level>& side, bool is_bid, std::int64_t price) {
+    return std::lower_bound(
       side.begin(), side.end(), price,
       [is_bid](const Level& lv, std::int64_t px) {
-        // asks 升序：lv.price < px
-        // bids 降序：lv.price > px
-        return is_bid ? (lv.price > px) : (lv.price < px);
+        return is_bid ? (lv.price > px) : (lv.price < px); // bids desc, asks asc
       });
+  }
 
-    if (it != side.end() && it->price == price) {
-      it->qty += delta_qty;
-      if (it->qty <= 0) {
-        side.erase(it);
-      }
+  static void set_level(std::vector<Level>& side, bool is_bid, std::int64_t price, std::int64_t qty) {
+    auto it = lower_bound_price(side, is_bid, price);
+    const bool exists = (it != side.end() && it->price == price);
+    if (qty <= 0) {
+      if (exists) side.erase(it);
       return;
     }
-
-    // 没找到该价位：只有 delta_qty > 0 才插入
-    if (delta_qty > 0) {
-      side.insert(it, Level{price, delta_qty});
-    }
+    if (exists) it->qty = qty;
+    else side.insert(it, Level{price, qty});
   }
 
 private:
-  std::vector<Level> bids_;
-  std::vector<Level> asks_;
+  std::vector<Level> bids_; // best bid at index 0 (descending by price)
+  std::vector<Level> asks_; // best ask at index 0 (ascending by price)
 };
 
 } // namespace q::book

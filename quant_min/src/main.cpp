@@ -15,6 +15,7 @@
 #include "common/spsc_ring.hpp"
 #include "common/backoff.hpp"
 #include "market/replay.hpp"
+#include "book/book_builder.hpp"
 
 static void usage() {
   std::cout
@@ -39,20 +40,24 @@ struct PipeStats {
   std::size_t ring_max_depth{0};
   std::size_t ring_full_count{0};
 
+  q::book::BuildState build_state;
+  q::book::BuilderStats build_stats;
+
   q::LatencyRecorder::Stats book_lat{};
 };
 
 template <class BookT>
 static PipeStats run_direct(const q::market::ReplayConfig& cfg, std::size_t sample_every) {
   BookT book;
+  q::book::BookBuilder<BookT> book_builder(&book);
   q::LatencyRecorder lat;
 
   q::market::ReplayEngine engine(cfg);
 
   std::size_t n = 0;
   const auto wall0 = q::now();
-  n = engine.run([&](const q::market::Tick& t) {
-      book.on_tick(t);
+  n = engine.run([&](const q::market::MarketEvent& t) {
+      book_builder.on_event(t);
     },
     (sample_every > 0 ? &lat : nullptr),
     sample_every
@@ -68,6 +73,8 @@ static PipeStats run_direct(const q::market::ReplayConfig& cfg, std::size_t samp
   ps.seconds = secs;
   ps.rate = rate;
   ps.book_lat = lat.compute();
+  ps.build_state = book_builder.state();
+  ps.build_stats = book_builder.stats();
   return ps;
 }
 
@@ -75,9 +82,9 @@ template <class BookT>
 static PipeStats run_spsc(const q::market::ReplayConfig& cfg,
                           std::size_t ring_cap_pow2,
                           std::size_t sample_every) {
-  using Tick = q::market::Tick;
+  using Event = q::market::MarketEvent;
 
-  q::SpscRing<Tick> ring(ring_cap_pow2);
+  q::SpscRing<Event> ring(ring_cap_pow2);
 
   std::atomic<bool> producer_done{false};
 
@@ -90,10 +97,11 @@ static PipeStats run_spsc(const q::market::ReplayConfig& cfg,
 
   // Consumer thread: pop -> book update
   BookT book;
+  q::book::BookBuilder book_builder(&book);
   std::thread consumer([&] {
-    Tick t{};
+    Event t{};
     std::size_t local_consumed = 0;
-    IdleBackoff idleBackoff(2500, 2500, 100, 2000);
+    q::IdleBackoff idleBackoff(2500, 2500, 100, 2000);
 
     while (true) {
       if (ring.pop(t)) {
@@ -101,11 +109,11 @@ static PipeStats run_spsc(const q::market::ReplayConfig& cfg,
         // measure book update latency (sampling)
         if (sample_every > 0 && ((local_consumed % sample_every) == 0)) {
           const auto t0 = q::now();
-          book.on_tick(t);
+          book_builder.on_event(t);
           const auto t1 = q::now();
           book_lat.add_ns(std::chrono::duration_cast<std::chrono::nanoseconds>(t1 - t0).count());
         } else {
-          book.on_tick(t);
+          book_builder.on_event(t);
         }
 
         ++local_consumed;
@@ -131,7 +139,7 @@ static PipeStats run_spsc(const q::market::ReplayConfig& cfg,
 
     // Use ReplayEngine as reader + pacing; callback only pushes to ring.
     // Disable latency measurement in producer.
-    (void)engine.run([&](const Tick& t) {
+    (void)engine.run([&](const Event& t) {
       // backpressure: wait until there is space
       while (!ring.push(t)) {
         ring_full_count.fetch_add(1, std::memory_order_relaxed);
@@ -171,6 +179,8 @@ static PipeStats run_spsc(const q::market::ReplayConfig& cfg,
   ps.ring_full_count = ring_full_count.load(std::memory_order_relaxed);
   ps.ring_max_depth  = ring_max_depth.load(std::memory_order_relaxed);
   ps.book_lat = book_lat.compute();
+  ps.build_state = book_builder.state();
+  ps.build_stats = book_builder.stats();
   return ps;
 }
 
@@ -179,8 +189,16 @@ static void print_stats(const std::string& label, const PipeStats& s, bool laten
   std::cout << "ticks=" << s.ticks << " time=" << s.seconds << "s rate=" << s.rate << " msg/s\n";
   if (label.find("spsc") != std::string::npos) {
     std::cout << "ring_max_depth=" << s.ring_max_depth
-              << " ring_full_count=" << s.ring_full_count << "\n";
+            << " ring_full_count=" << s.ring_full_count << "\n";
+
   }
+  std::cout << "build: live=" << (s.build_state == q::book::BuildState::Live)
+            << " out_of_sync=" << (s.build_state == q::book::BuildState::OutOfSync)
+            << " last_seq=" << s.build_stats.last_seq
+            << " gap=" << s.build_stats.gap_count
+            << " dup_old=" << s.build_stats.dup_or_old_count
+            << " crossed=" << s.build_stats.crossed_count
+            << " anomaly=" << s.build_stats.anomaly_count << "\n";
   if (latency_enabled) {
     std::cout << "book_update_latency(ns): samples=" << s.book_lat.count
               << " p50=" << s.book_lat.p50
