@@ -35,3 +35,24 @@ endif()
 target_compile_options(quant_min PRIVATE
 	$<$<CONFIG:Release>:-O3 -march=native -mtune=native>
 )
+
+# for backtest_min
+add_executable(backtest_min
+  src/backtest_main.cpp
+  src/market/replay.cpp
+)
+
+target_include_directories(backtest_min PRIVATE include)
+
+if (ENABLE_WARNINGS)
+  set_project_warnings(backtest_min)
+endif()
+
+if (ENABLE_SANITIZERS)
+  target_compile_options(backtest_min PRIVATE -fsanitize=address,undefined -fno-omit-frame-pointer)
+  target_link_options(backtest_min PRIVATE -fsanitize=address,undefined -fno-omit-frame-pointer)
+endif()
+
+target_compile_options(backtest_min PRIVATE
+  $<$<CONFIG:Release>:-O3 -march=native -mtune=native>
+)
