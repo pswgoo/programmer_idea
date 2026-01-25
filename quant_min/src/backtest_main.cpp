@@ -13,27 +13,16 @@
 #include "common/log.hpp"
 #include "market/replay.hpp"
 #include "market/event.hpp"
+#include "backtest/orders.hpp"
+#include "backtest/execution.hpp"
+#include "backtest/oms.hpp"
 
-// -------------------- MarketView --------------------
-struct MarketView {
-  std::int64_t ts_ns{};
-  std::int64_t best_bid_px{};
-  std::int64_t best_ask_px{};
-  std::int64_t mid_px{}; // integer price
-};
+using namespace bt;
 
-enum class Side : std::uint8_t { Buy = 0, Sell = 1 };
-
-struct OrderRequest {
-  Side side{};
-  std::int64_t qty{};
-};
-
-struct FillEvent {
-  std::int64_t ts_ns{};
-  Side side{};
-  std::int64_t price{};
-  std::int64_t qty{};
+struct StratDecision {
+  std::optional<bt::OrderRequest> submit;
+  bool cancel_buy{false};
+  bool cancel_sell{false};
 };
 
 // -------------------- Strategy (Mean Reversion) --------------------
@@ -49,13 +38,12 @@ public:
                         std::int64_t trade_qty)
       : window_(window), threshold_(threshold), trade_qty_(trade_qty) {}
 
-  // position 传入，避免策略自己维护仓位（工程上更清晰）
-  std::optional<OrderRequest> on_market(const MarketView& mv, std::int64_t position) {
-    if (mv.best_bid_px <= 0 || mv.best_ask_px <= 0) return std::nullopt;
+  StratDecision on_market(const MarketView& mv, std::int64_t position) {
+    StratDecision d;
+    if (mv.best_bid_px <= 0 || mv.best_ask_px <= 0) return d;
 
-    // 更新窗口
     push_mid(mv.mid_px);
-    if (mids_.size() < window_) return std::nullopt;
+    if (mids_.size() < window_) return d;
 
     const double ma = mean_mid();
     const double mid = static_cast<double>(mv.mid_px);
@@ -63,15 +51,61 @@ public:
     const double upper = ma * (1.0 + threshold_);
     const double lower = ma * (1.0 - threshold_);
 
-    // 只做多版本
-    if (position == 0 && mid < lower) {
-      return OrderRequest{Side::Buy, trade_qty_};
+    const bool buy_signal  = (position == 0 && mid < lower);
+    const bool sell_signal = (position > 0 && mid > upper);
+
+    // 只做多：开多/平多
+    if (position == 0) {
+      // 不应留卖单
+      if (working_sell_id_ != 0) d.cancel_sell = true;
+
+      if (buy_signal) {
+        if (working_buy_id_ == 0) {
+          d.submit = bt::OrderRequest{bt::OrderType::Limit, bt::Side::Buy, trade_qty_, mv.best_bid_px, bt::TimeInForce::GTC};
+        }
+      } else {
+        if (working_buy_id_ != 0) d.cancel_buy = true;
+      }
+    } else { // position > 0
+      // 不应留买单（避免加仓）
+      if (working_buy_id_ != 0) d.cancel_buy = true;
+
+      if (sell_signal) {
+        if (working_sell_id_ == 0) {
+          d.submit = bt::OrderRequest{bt::OrderType::Limit, bt::Side::Sell, position, mv.best_ask_px, bt::TimeInForce::GTC};
+        }
+      } else {
+        if (working_sell_id_ != 0) d.cancel_sell = true;
+      }
     }
-    if (position > 0 && mid > upper) {
-      return OrderRequest{Side::Sell, position}; // 平仓
-    }
-    return std::nullopt;
+
+    return d;
   }
+
+  // 引擎在 submit 后调用：把 order_id 写入对应方向
+  void on_submit_accepted(bt::Side side, std::int64_t order_id) {
+    if (order_id == 0) return;
+    if (side == bt::Side::Buy) working_buy_id_ = order_id;
+    else working_sell_id_ = order_id;
+  }
+
+  // 引擎在 cancel ack 后调用
+  void on_canceled(std::int64_t order_id) {
+    if (order_id == working_buy_id_) working_buy_id_ = 0;
+    if (order_id == working_sell_id_) working_sell_id_ = 0;
+  }
+
+  // 引擎在 fill 后调用（partial/full）
+  void on_fill(const bt::FillEvent& f, std::int64_t leaves_after) {
+    // 如果订单已完全成交，清理对应 id
+    if (leaves_after == 0) {
+      if (f.order_id == working_buy_id_) working_buy_id_ = 0;
+      if (f.order_id == working_sell_id_) working_sell_id_ = 0;
+    }
+  }
+
+  std::int64_t working_buy_id() const { return working_buy_id_; }
+  std::int64_t working_sell_id() const { return working_sell_id_; }
 
 private:
   void push_mid(std::int64_t mid) {
@@ -89,26 +123,14 @@ private:
 
 private:
   std::size_t window_{200};
-  double threshold_{0.001};       // 0.1%
+  double threshold_{0.001};
   std::int64_t trade_qty_{1};
 
   std::deque<std::int64_t> mids_;
   long double sum_{0.0L};
-};
 
-// -------------------- Execution Simulator --------------------
-// 市价单立即成交：Buy@best_ask，Sell@best_bid
-class ImmediateFillExecution {
-public:
-  std::optional<FillEvent> execute(const MarketView& mv, const OrderRequest& ord) const {
-    if (ord.qty <= 0) return std::nullopt;
-
-    if (ord.side == Side::Buy) {
-      return FillEvent{mv.ts_ns, Side::Buy, mv.best_ask_px, ord.qty};
-    } else {
-      return FillEvent{mv.ts_ns, Side::Sell, mv.best_bid_px, ord.qty};
-    }
-  }
+  std::int64_t working_buy_id_{0};
+  std::int64_t working_sell_id_{0};
 };
 
 // -------------------- Portfolio --------------------
@@ -239,7 +261,8 @@ int main(int argc, char** argv) {
 
   q::book::BookBuilder<q::book::FlatL2Book> book_builder(&book);
   MeanReversionStrategy strat(window, threshold, trade_qty);
-  ImmediateFillExecution exec;
+  Oms oms;
+  ExecutionSim exec;
 
   Portfolio pf;
   pf.cash = init_cash;
@@ -247,6 +270,7 @@ int main(int argc, char** argv) {
   Metrics mx;
 
   std::size_t trades = 0;
+  std::size_t fills_count = 0;
   std::size_t market_views = 0;
 
   // --------- Run ---------
@@ -267,16 +291,57 @@ int main(int argc, char** argv) {
 
     ++market_views;
 
-    // 策略决定是否下单
-    if (auto ord = strat.on_market(mv, pf.position)) {
-      // 执行并成交
-      if (auto fill = exec.execute(mv, *ord)) {
-        pf.on_fill(*fill);
-        ++trades;
-      }
+    auto fill_events = exec.on_market(oms, mv);
+    for (auto fill_event : fill_events) {
+        pf.on_fill(fill_event);
+        ++fills_count;
+
+        // 把 leaves_after 反馈给策略（用于 Filled 时清 working id）
+        if (auto* o = oms.get(fill_event.order_id)) {
+            strat.on_fill(fill_event, o->leaves_qty);
+        }
     }
 
-    // 更新净值（用 mid 标记）
+    // 策略决定是否下单
+    StratDecision dec = strat.on_market(mv, pf.position);
+    // 3) 先撤单
+    if (dec.cancel_buy) {
+        auto id = strat.working_buy_id();
+        if (id != 0) {
+            auto up = exec.cancel(oms, mv, id);
+            if (up.status == bt::OrderStatus::Canceled) strat.on_canceled(id);
+        }
+    }
+
+    if (dec.cancel_sell) {
+        auto id = strat.working_sell_id();
+        if (id != 0) {
+            auto up = exec.cancel(oms, mv, id);
+            if (up.status == bt::OrderStatus::Canceled) strat.on_canceled(id);
+        }
+    }
+
+    // 4) 再下单
+    if (dec.submit) {
+        auto res = exec.submit(oms, mv, *dec.submit);
+
+        // accepted
+        if (res.ack.status == bt::OrderStatus::Working || res.ack.status == bt::OrderStatus::PartiallyFilled) {
+            strat.on_submit_accepted(dec.submit->side, res.order_id);
+        }
+
+        // submit 可能立刻产生 fill（partial/full）
+        if (res.fill) {
+            pf.on_fill(*res.fill);
+            ++fills_count;
+
+            if (auto* o = oms.get(res.fill->order_id)) {
+                strat.on_fill(*res.fill, o->leaves_qty);
+            }
+        }
+    }
+
+    // 5) 更新净值
     mx.add_equity(pf.equity(mv.mid_px));
   }, (sample_every > 0 ? &cb_lat : nullptr), sample_every);
 
@@ -284,7 +349,7 @@ int main(int argc, char** argv) {
   std::cout << "\n=== BACKTEST SUMMARY ===\n";
   std::cout << "events_processed=" << n << "\n";
   std::cout << "market_views=" << market_views << "\n";
-  std::cout << "trades=" << trades << "\n";
+  std::cout << "fills_count=" << fills_count << "\n";
   std::cout << "final_cash=" << static_cast<double>(pf.cash) << "\n";
   std::cout << "final_pos=" << pf.position << "\n";
 
