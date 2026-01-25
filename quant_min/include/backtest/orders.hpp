@@ -38,6 +38,11 @@ struct Order {
   std::int64_t limit_px{0};
   OrderStatus status{OrderStatus::PendingNew};
   std::int64_t create_ts_ns{0};
+
+  // --- async cancel + ttl ---
+  std::int64_t cancel_req_ts_ns{0};
+  std::int64_t cancel_effective_ts_ns{0}; // when cancel becomes effective
+  std::int64_t expire_ts_ns{0};           // 0 = never expire
 };
 
 struct OrderUpdate {

@@ -30,6 +30,12 @@ public:
     return &it->second;
   }
 
+  const Order* get(std::int64_t id) const {
+    auto it = orders_.find(id);
+    if (it == orders_.end()) return nullptr;
+    return &it->second;
+  }
+
   // Active = still eligible for execution processing
   // i.e. Working / PartiallyFilled / CancelRequested
   std::vector<Order*> active_orders() {

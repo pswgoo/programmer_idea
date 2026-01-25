@@ -16,6 +16,7 @@
 #include "backtest/orders.hpp"
 #include "backtest/execution.hpp"
 #include "backtest/oms.hpp"
+#include "backtest/risk.hpp"
 
 using namespace bt;
 
@@ -96,11 +97,34 @@ public:
   }
 
   // 引擎在 fill 后调用（partial/full）
-  void on_fill(const bt::FillEvent& f, std::int64_t leaves_after) {
+  void on_fill(const std::int64_t order_id, std::int64_t leaves_after) {
     // 如果订单已完全成交，清理对应 id
     if (leaves_after == 0) {
-      if (f.order_id == working_buy_id_) working_buy_id_ = 0;
-      if (f.order_id == working_sell_id_) working_sell_id_ = 0;
+      if (order_id == working_buy_id_) working_buy_id_ = 0;
+      if (order_id == working_sell_id_) working_sell_id_ = 0;
+    }
+  }
+
+  void on_order_updated(const bt::Oms& oms, const bt::OrderUpdate& up) {
+    switch (up.status) {
+      case bt::OrderStatus::Canceled:
+        on_canceled(up.order_id);
+        break;
+
+      case bt::OrderStatus::Filled: {
+        std::int64_t leaves = 0;
+        if (auto* o = oms.get(up.order_id)) leaves = o->leaves_qty;
+        on_fill(up.order_id, leaves);
+        break;
+      }
+
+      case bt::OrderStatus::Rejected:
+        // 如果你策略里把 Rejected 也当作“无挂单”，这里也清一下更稳
+        on_canceled(up.order_id);
+        break;
+
+      default:
+        break;
     }
   }
 
@@ -262,7 +286,29 @@ int main(int argc, char** argv) {
   q::book::BookBuilder<q::book::FlatL2Book> book_builder(&book);
   MeanReversionStrategy strat(window, threshold, trade_qty);
   Oms oms;
-  ExecutionSim exec;
+  bt::ExecConfig ec;
+  ec.allow_taker_fill = true;
+  ec.enable_partial_fill = true;
+  ec.max_fill_qty_per_tick = 1;
+
+  // async cancel 1~5ms
+  ec.cancel_delay_base_ns = 1'000'000;
+  ec.cancel_delay_jitter_ns = 4'000'000;
+  ec.cancel_delay_seed = 0xC0FFEEu;
+
+  // ttl（先关掉，之后再开）
+  // ec.default_ttl_ns = 20'000'000; // 20ms for demo
+
+  ExecutionSim exec(ec);
+    
+  bt::RiskConfig rc;
+  rc.max_abs_position = 100;
+  rc.max_order_qty = 50;
+  rc.max_active_orders = 2;
+  rc.max_active_orders_per_side = 1;
+  rc.max_submits_per_sec = 50;
+  rc.max_consecutive_rejects = 20;
+  bt::RiskManager risk(rc);
 
   Portfolio pf;
   pf.cash = init_cash;
@@ -295,11 +341,16 @@ int main(int argc, char** argv) {
     for (auto fill_event : fill_events) {
         pf.on_fill(fill_event);
         ++fills_count;
+    }
+    for (auto up : exec.drain_updates()) {
+        // 策略里处理 Filled/Cuanceled 来清 working id
+        strat.on_order_updated(oms, up);
+    }
 
-        // 把 leaves_after 反馈给策略（用于 Filled 时清 working id）
-        if (auto* o = oms.get(fill_event.order_id)) {
-            strat.on_fill(fill_event, o->leaves_qty);
-        }
+    if (risk.killed()) {
+      // 熔断后你可以选择：继续更新净值但不交易
+      mx.add_equity(pf.equity(mv.mid_px));
+      return;
     }
 
     // 策略决定是否下单
@@ -323,22 +374,35 @@ int main(int argc, char** argv) {
 
     // 4) 再下单
     if (dec.submit) {
+      auto d = risk.pre_submit_check(oms, mv, *dec.submit, pf.position);
+      if (!d.ok) {
+        // 风控拒单：告诉策略一个“Rejected”回报（可选）
+        // strat.on_order_updated(oms, {mv.ts_ns, 0, bt::OrderStatus::Rejected, d.reason});
+      } else {
         auto res = exec.submit(oms, mv, *dec.submit);
 
-        // accepted
-        if (res.ack.status == bt::OrderStatus::Working || res.ack.status == bt::OrderStatus::PartiallyFilled) {
-            strat.on_submit_accepted(dec.submit->side, res.order_id);
+        // 执行层拒单也计入熔断
+        if (res.ack.status == bt::OrderStatus::Rejected) {
+          risk.on_exec_reject(mv.ts_ns, res.ack.reason);
+        } else {
+          risk.on_good_event();
+          // accepted
+          if (res.ack.status == bt::OrderStatus::Working || res.ack.status == bt::OrderStatus::PartiallyFilled) {
+              strat.on_submit_accepted(dec.submit->side, res.order_id);
+          }
         }
 
         // submit 可能立刻产生 fill（partial/full）
         if (res.fill) {
             pf.on_fill(*res.fill);
             ++fills_count;
+            risk.on_good_event();
 
             if (auto* o = oms.get(res.fill->order_id)) {
-                strat.on_fill(*res.fill, o->leaves_qty);
+                strat.on_fill(res.fill->order_id, o->leaves_qty);
             }
         }
+      }
     }
 
     // 5) 更新净值
