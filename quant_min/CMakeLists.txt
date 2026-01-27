@@ -56,3 +56,14 @@ endif()
 target_compile_options(backtest_min PRIVATE
   $<$<CONFIG:Release>:-O3 -march=native -mtune=native>
 )
+
+add_executable(multi_backtest
+  src/multi_backtest_main.cpp
+)
+
+target_include_directories(multi_backtest PRIVATE
+  ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+
+find_package(Threads REQUIRED)
+target_link_libraries(multi_backtest PRIVATE Threads::Threads)
