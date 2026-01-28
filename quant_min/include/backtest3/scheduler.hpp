@@ -9,78 +9,79 @@
 #include "backtest3/types.hpp"
 
 namespace bt3 {
+// A scheduler that returns sym_idx with event (because MarketEvent doesn't include symbol).
+  class SymBatchScheduler {
+  public:
+    using Item = std::pair<std::size_t, q::market::MarketEvent>; // (sym_idx, event)
 
-class KWayMergeScheduler {
-public:
-  explicit KWayMergeScheduler(const std::vector<VectorReplay*>& replays)
-      : replays_(replays) {
-    init_heap();
-  }
-
-  bool has_next() const { return !heap_.empty(); }
-
-  TickEvent next() {
-    auto top = heap_.top();
-    heap_.pop();
-
-    const auto sym = std::get<1>(top);
-    auto idx = std::get<2>(top);
-
-    auto* rp = replays_.at(sym_to_replay_index_.at(sym));
-    TickEvent ev = rp->next(idx);
-
-    if (rp->has_next(idx)) {
-      const auto& nxt = rp->peek(idx);
-      heap_.push(Node{nxt.ts_ns, sym, idx});
+    explicit SymBatchScheduler(const std::vector<VectorReplay*>& replays,
+                               std::int64_t instruments_count)
+        : replays_(replays), instruments_count_(instruments_count) {
+      init();
     }
-    return ev;
-  }
 
-  // 取同 ts 的 batch（Milestone 2 依赖这个）
-  std::vector<TickEvent> next_batch_same_ts() {
-    std::vector<TickEvent> batch;
-    if (!has_next()) return batch;
+    bool has_next() const { return !heap_.empty(); }
 
-    TickEvent first = next();
-    const auto ts = first.ts_ns;
-    batch.push_back(first);
+    std::vector<Item> next_batch_same_ts() {
+      std::vector<Item> batch;
+      if (!has_next()) return batch;
 
-    while (has_next()) {
-      auto top = heap_.top();
-      if (std::get<0>(top) != ts) break;
-      batch.push_back(next());
+      auto first = next_one();
+      const auto ts = first.second.ts_ns;
+      batch.push_back(first);
+
+      while (has_next()) {
+        auto top = heap_.top();
+        if (std::get<0>(top) != ts) break;
+        batch.push_back(next_one());
+      }
+      return batch;
     }
-    return batch;
-  }
 
-private:
-  using Node = std::tuple<std::int64_t, SymbolId, std::size_t>; // (ts, sym, idx)
-  struct Cmp {
-    bool operator()(const Node& a, const Node& b) const {
-      if (std::get<0>(a) != std::get<0>(b)) return std::get<0>(a) > std::get<0>(b);
-      return std::get<1>(a) > std::get<1>(b); // tie: sym
-    }
-  };
+  private:
+    using Node = std::tuple<std::int64_t, std::int64_t, std::size_t, std::size_t>;
+    // (ts, seq, sym_idx, cursor)
 
-  void init_heap() {
-    sym_to_replay_index_.clear();
+    struct Cmp {
+      bool operator()(const Node& a, const Node& b) const {
+        if (std::get<0>(a) != std::get<0>(b)) return std::get<0>(a) > std::get<0>(b);
+        if (std::get<1>(a) != std::get<1>(b)) return std::get<1>(a) > std::get<1>(b);
+        return std::get<2>(a) > std::get<2>(b);
+      }
+    };
 
-    for (std::size_t i = 0; i < replays_.size(); ++i) {
-      auto* rp = replays_[i];
-      sym_to_replay_index_[rp->sym()] = i;
-
-      std::size_t idx = 0;
-      if (rp->has_next(idx)) {
-        const auto& ev = rp->peek(idx);
-        heap_.push(Node{ev.ts_ns, rp->sym(), idx});
+    void init() {
+      while (!heap_.empty()) heap_.pop();
+      for (std::size_t sym_idx = 0; sym_idx < instruments_count_; ++sym_idx) {
+        auto* rp = replays_[sym_idx];
+        std::size_t cur = 0;
+        if (rp->has_next(cur)) {
+          const auto& ev = rp->peek(cur);
+          heap_.push(Node{ev.ts_ns, ev.seq, sym_idx, cur});
+        }
       }
     }
-  }
 
-private:
-  const std::vector<VectorReplay*>& replays_;
-  std::priority_queue<Node, std::vector<Node>, Cmp> heap_;
-  std::unordered_map<SymbolId, std::size_t> sym_to_replay_index_;
-};
+    Item next_one() {
+      auto top = heap_.top();
+      heap_.pop();
+
+      const auto sym_idx = std::get<2>(top);
+      auto cur = std::get<3>(top);
+      auto* rp = replays_[sym_idx];
+      auto ev = rp->next(cur);
+
+      if (rp->has_next(cur)) {
+        const auto& nxt = rp->peek(cur);
+        heap_.push(Node{nxt.ts_ns, nxt.seq, sym_idx, cur});
+      }
+      return {sym_idx, ev};
+    }
+
+  private:
+    const std::vector<VectorReplay*>& replays_;
+    std::int64_t instruments_count_;
+    std::priority_queue<Node, std::vector<Node>, Cmp> heap_;
+  };
 
 } // namespace bt3

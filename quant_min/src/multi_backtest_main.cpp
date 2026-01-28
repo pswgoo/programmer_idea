@@ -1,32 +1,45 @@
 #include <cstdint>
 #include <vector>
+#include <iostream>
 
-#include "backtest3/engine.hpp"
-#include "backtest3/replay.hpp"
-#include "backtest3/types.hpp"
+#include "backtest3/engine.hpp"                 // MultiSymbolEngine
+#include "backtest3/strategy_portfolio.hpp"     // MeanReversionPortfolioStrategy
+#include "backtest3/replay.hpp"                 // 你 backtest3 的 VectorReplay / FileReplay
+#include "backtest3/scheduler.hpp"              // 必须支持 batch item = (sym_idx, MarketEvent)
 
-static std::vector<bt3::TickEvent> make_stream(bt3::SymbolId sym,
-                                               std::int64_t start_ts,
-                                               int n,
-                                               std::int64_t base_px,
-                                               std::int64_t step_ns,
-                                               std::int64_t wobble) {
-  std::vector<bt3::TickEvent> v;
-  v.reserve(n);
+// 你的项目一 MarketEvent
+#include "market/event.hpp"
+
+static std::vector<q::market::MarketEvent>
+gen_stream(std::int64_t base_px,
+           int n_ticks,
+           std::int64_t start_ts,
+           std::int64_t step_ns) {
+  using namespace q::market;
+
+  std::vector<MarketEvent> v;
+  v.reserve(static_cast<std::size_t>(n_ticks) * 3 + 8);
+
   std::int64_t ts = start_ts;
-  std::int64_t px = base_px;
-  for (int i = 0; i < n; ++i) {
-    ts += step_ns;
-    // 造点相关但有偏移的价差，让 pairs 有信号
-    px += (i % 2 == 0) ? wobble : -wobble;
+  std::int64_t seq = 0;
 
-    bt3::TickEvent e;
-    e.ts_ns = ts;
-    e.sym = sym;
-    e.mid_px = px;
-    e.best_bid_px = px - 1;
-    e.best_ask_px = px + 1;
-    v.push_back(e);
+  // Snapshot begin
+  v.push_back(MarketEvent{ts, seq++, Kind::SnapshotBegin, Side::Unknown, 0, 0, Action::None});
+  // Snapshot levels (bid/ask L1)
+  v.push_back(MarketEvent{ts, seq++, Kind::SnapshotLevel, Side::Bid, base_px - 1, 100, Action::New});
+  v.push_back(MarketEvent{ts, seq++, Kind::SnapshotLevel, Side::Ask, base_px + 1, 100, Action::New});
+  // Snapshot end
+  v.push_back(MarketEvent{ts, seq++, Kind::SnapshotEnd, Side::Unknown, 0, 0, Action::None});
+
+  std::int64_t px = base_px;
+  for (int i = 0; i < n_ticks; ++i) {
+    ts += step_ns;
+    // 让价格上下波动，产生均值回归信号
+    px += (i % 2 == 0) ? 2 : -2;
+
+    // bid/ask change
+    v.push_back(MarketEvent{ts, seq++, Kind::Incremental, Side::Bid, px - 1, 100, Action::Change});
+    v.push_back(MarketEvent{ts, seq++, Kind::Incremental, Side::Ask, px + 1, 100, Action::Change});
   }
   return v;
 }
@@ -34,52 +47,51 @@ static std::vector<bt3::TickEvent> make_stream(bt3::SymbolId sym,
 int main() {
   using namespace bt3;
 
-  std::vector<Instrument> instruments = {
-      {1, "A"},
-      {2, "B"},
-      {3, "C"},
-      {4, "D"},
-  };
+  constexpr std::size_t N = 4;
 
-  // A/B 做 pairs：让 A wobble=2，B wobble=1 形成价差波动
-  auto a = make_stream(1, 0,       300000, 10000, 1'000'000, 2);
-  auto b = make_stream(2, 0,       300000, 10002, 1'000'000, 1);
-  auto c = make_stream(3, 500'000, 300000, 20000, 1'000'000, 1);
-  auto d = make_stream(4, 0,       150000, 30000, 2'000'000, 1);
+  // 1) replays：每个 sym 一个 replay（MarketEvent 不带 symbol，靠 sym_idx 绑定）
+  auto e0 = gen_stream(10000, 200000, 0,        1'000'000);
+  auto e1 = gen_stream(20000, 200000, 0,        1'000'000);
+  auto e2 = gen_stream(30000, 200000, 200'000,  1'000'000);
+  auto e3 = gen_stream(40000, 100000, 0,        2'000'000);
 
-  VectorReplay r1(1, std::move(a));
-  VectorReplay r2(2, std::move(b));
-  VectorReplay r3(3, std::move(c));
-  VectorReplay r4(4, std::move(d));
+  VectorReplay r0(std::move(e0));
+  VectorReplay r1(std::move(e1));
+  VectorReplay r2(std::move(e2));
+  VectorReplay r3(std::move(e3));
 
-  std::vector<VectorReplay*> replays = {&r1, &r2, &r3, &r4};
+  std::vector<VectorReplay*> replays = {&r0, &r1, &r2, &r3};
 
-  PairsConfig sc;
-  sc.idx_a = 0;        // instruments[0] => SymbolId 1
-  sc.idx_b = 1;        // instruments[1] => SymbolId 2
+  // 2) scheduler：必须输出 batch item = (sym_idx, MarketEvent)
+  SymBatchScheduler sched(replays, N);  // 你 backtest3/scheduler.hpp 里实现这个类
+
+  // 3) engine config：worker 绑定
+  EngineConfig ec;
+  ec.n_workers = 4;
+
+  // 4) project2 exec/risk config（你自己调）
+  bt::ExecConfig exec_cfg;
+  exec_cfg.allow_taker_fill = true;
+  exec_cfg.enable_partial_fill = true;
+  exec_cfg.max_fill_qty_per_tick = 2;     // 强制 partial fill
+  exec_cfg.cancel_delay_base_ns = 1'000'000;
+  exec_cfg.cancel_delay_jitter_ns = 4'000'000;
+
+  bt::RiskConfig risk_cfg;
+  // 按你项目二 risk 默认即可，这里略
+
+  // 5) engine + strategy
+  MultiSymbolEngine engine(N, ec, exec_cfg, risk_cfg);
+
+  MeanRevPortfolioConfig sc;
   sc.window = 200;
-  sc.entry_z = 2.0;
-  sc.exit_z = 0.5;
-  sc.qty = 10;
+  sc.threshold = 0.001;
+  sc.trade_qty = 10;
+  sc.reprice_after_ns = 5'000'000;
 
-  PortfolioRiskConfig rc;
-  rc.max_gross_notional = 1'000'000'000; // 放大点，避免太早熔断
-  rc.max_abs_position_per_sym = 1000;
-  rc.max_order_qty = 200;
-  rc.enable_drawdown_kill = false;
+  MeanReversionPortfolioStrategy strat(N, sc);
 
-  ExecSimConfig ec;
-  ec.fee_per_unit = 0;
-  ec.slippage_ticks = 1;
+  engine.run(sched, strat);
 
-  std::size_t n_threads = 4;
-
-  MultiBacktestEngine engine(instruments, replays, n_threads, sc, rc, ec);
-
-  // 初始仓位（默认 0 也可以）
-  engine.set_position(1, 0);
-  engine.set_position(2, 0);
-
-  engine.run();
   return 0;
 }

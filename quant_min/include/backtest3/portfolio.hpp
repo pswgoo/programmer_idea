@@ -4,7 +4,7 @@
 #include <cmath>
 
 #include "backtest3/types.hpp"
-#include "backtest3/orders.hpp"
+#include "backtest/orders.hpp"
 
 namespace bt3 {
 
@@ -25,11 +25,11 @@ public:
   void set_pos(std::size_t idx, std::int64_t p) { st_[idx].pos = p; }
   void set_cash(std::size_t idx, std::int64_t c) { st_[idx].cash = c; }
 
-  void apply_fill(std::size_t idx, const Fill& f) {
+  void apply_fill(std::size_t idx, const bt::FillEvent& f) {
     // 买入：pos+qty，cash -= px*qty
     // 卖出：pos-qty，cash += px*qty
     const std::int64_t notional = f.price * f.qty;
-    if (f.side == Side::Buy) {
+    if (f.side == bt::Side::Buy) {
       st_[idx].pos += f.qty;
       st_[idx].cash -= notional;
     } else {

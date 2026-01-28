@@ -12,13 +12,6 @@ struct Instrument {
   std::string symbol;
 };
 
-struct MarketView {
-  std::int64_t ts_ns{};
-  std::int64_t best_bid_px{};
-  std::int64_t best_ask_px{};
-  std::int64_t mid_px{};
-};
-
 struct TickEvent {
   std::int64_t ts_ns{};
   SymbolId sym{};
