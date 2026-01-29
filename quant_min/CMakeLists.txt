@@ -67,3 +67,9 @@ target_include_directories(multi_backtest PRIVATE
 
 find_package(Threads REQUIRED)
 target_link_libraries(multi_backtest PRIVATE Threads::Threads)
+
+add_executable(live_binance_m1
+  src/live_binance_m1.cpp
+)
+target_include_directories(live_binance_m1 PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_link_libraries(live_binance_m1 PRIVATE Threads::Threads ssl crypto)
