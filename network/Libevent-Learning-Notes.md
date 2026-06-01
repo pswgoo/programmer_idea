@@ -1,7 +1,7 @@
 # Libevent 学习笔记
 
 这份笔记整理了 `sample/hello-world.c` 示例背后的 Libevent 核心机制，覆盖
-`event_base`、`event`、`eventop`、`evconnlistener`、`bufferevent`、
+`event_base`、`event`、`eventop`、`evconnlistener`、signal、`bufferevent`、
 `evbuffer`、`evbuffer_chain` 和 timer 机制。
 
 *code repo: master 1b7cc9b58d6a5fdd5f33a43168245c2e1f35291f*
@@ -26,16 +26,22 @@
    - [9.2 timeout_process()](#92-timeout_process)
    - [9.3 IO 和 timeout 同时存在时怎么处理？](#93-io-和-timeout-同时存在时怎么处理)
    - [9.4 common timeout](#94-common-timeout)
-10. [bufferevent：如何封装单条 stream 连接的异步读写？](#10-bufferevent如何封装单条-stream-连接的异步读写)
-    - [10.1 bufferevent_socket_new()](#101-bufferevent_socket_new)
-    - [10.2 bufferevent_setcb()](#102-bufferevent_setcb)
-    - [10.3 bufferevent_enable()](#103-bufferevent_enable)
-    - [10.4 bufferevent_write()](#104-bufferevent_write)
-11. [evbuffer：bufferevent 的输入/输出缓冲区如何设计？](#11-evbufferbufferevent-的输入输出缓冲区如何设计)
-12. [evbuffer_chain：为什么 evbuffer 使用链表结构？](#12-evbuffer_chain为什么-evbuffer-使用链表结构)
-    - [12.1 misalign 和 off](#121-misalign-和-off)
-    - [12.2 为什么 evbuffer_chain 要组织成链表？](#122-为什么-evbuffer_chain-要组织成链表)
-13. [hello-world.c 的组件关系：所有组件如何串起来？](#13-hello-worldc-的组件关系所有组件如何串起来)
+10. [signal 机制：Libevent 如何把 Unix signal 转成事件回调？](#10-signal-机制libevent-如何把-unix-signal-转成事件回调)
+    - [10.1 evsignal_new() 本质是什么？](#101-evsignal_new-本质是什么)
+    - [10.2 signal event 如何注册到 event_base？](#102-signal-event-如何注册到-event_base)
+    - [10.3 evsig_handler 为什么只写一个字节？](#103-evsig_handler-为什么只写一个字节)
+    - [10.4 evsig_cb 如何激活用户 signal callback？](#104-evsig_cb-如何激活用户-signal-callback)
+    - [10.5 signal 机制的限制是什么？](#105-signal-机制的限制是什么)
+11. [bufferevent：如何封装单条 stream 连接的异步读写？](#11-bufferevent如何封装单条-stream-连接的异步读写)
+    - [11.1 bufferevent_socket_new()](#111-bufferevent_socket_new)
+    - [11.2 bufferevent_setcb()](#112-bufferevent_setcb)
+    - [11.3 bufferevent_enable()](#113-bufferevent_enable)
+    - [11.4 bufferevent_write()](#114-bufferevent_write)
+12. [evbuffer：bufferevent 的输入/输出缓冲区如何设计？](#12-evbufferbufferevent-的输入输出缓冲区如何设计)
+13. [evbuffer_chain：为什么 evbuffer 使用链表结构？](#13-evbuffer_chain为什么-evbuffer-使用链表结构)
+    - [13.1 misalign 和 off](#131-misalign-和-off)
+    - [13.2 为什么 evbuffer_chain 要组织成链表？](#132-为什么-evbuffer_chain-要组织成链表)
+14. [hello-world.c 的组件关系：所有组件如何串起来？](#14-hello-worldc-的组件关系所有组件如何串起来)
 
 ## 1. 总体模型：Libevent 的核心组件如何分层？
 
@@ -639,7 +645,225 @@ EV_READ | EV_TIMEOUT
 common timeout 把同一 timeout duration 的事件放入专门队列，并用一个代表性
 timeout event 挂到 heap 里，适合大量连接共享同一超时时间的场景。
 
-## 10. bufferevent：如何封装单条 stream 连接的异步读写？
+## 10. signal 机制：Libevent 如何把 Unix signal 转成事件回调？
+
+Libevent 的默认 signal 处理思路是：
+
+```text
+Unix signal handler 不能直接执行复杂逻辑
+-> signal handler 只写一个字节到 socketpair/pipe
+-> event_base 监听 socketpair/pipe 的读端
+-> 读端可读后，回到普通 event loop 中处理 signal callback
+```
+
+也就是说，Libevent 把异步 signal 转换成了一个普通的 `EV_READ` 事件。
+
+### 10.1 evsignal_new() 本质是什么？
+
+`evsignal_new()` 是宏，定义在 `include/event2/event.h`：
+
+```c
+#define evsignal_new(b, x, cb, arg) \
+    event_new((b), (x), EV_SIGNAL | EV_PERSIST, (cb), (arg))
+```
+
+所以：
+
+```c
+signal_event = evsignal_new(base, SIGINT, signal_cb, base);
+```
+
+等价于创建一个：
+
+```text
+fd = SIGINT
+events = EV_SIGNAL | EV_PERSIST
+callback = signal_cb
+```
+
+这里的 `ev_fd` 字段不是文件描述符，而是信号编号。
+
+`event_assign()` 看到 `EV_SIGNAL` 后，会设置：
+
+```c
+ev->ev_closure = EV_CLOSURE_EVENT_SIGNAL;
+```
+
+signal event 不能和 `EV_READ`、`EV_WRITE`、`EV_CLOSED` 混用，因为 signal
+不是 fd IO 事件。
+
+### 10.2 signal event 如何注册到 event_base？
+
+`event_add(signal_event, NULL)` 会走：
+
+```c
+evmap_signal_add_(base, (int)ev->ev_fd, ev);
+```
+
+`evmap_signal_add_()` 把 signal event 放进：
+
+```text
+base->sigmap
+```
+
+也就是：
+
+```text
+signal number -> event list
+```
+
+如果这是某个 signal 第一次被监听，它会调用 signal 后端的 `add()`：
+
+```c
+evsel->add(base, ev->ev_fd, 0, EV_SIGNAL, ev);
+```
+
+默认 signal 后端是 `signal.c` 里的 `evsig_add()`。它会安装真正的系统
+signal handler：
+
+```c
+evsig_set_handler_(base, evsignal, evsig_handler);
+```
+
+在支持 `sigaction()` 的平台上，底层会调用：
+
+```c
+sigaction(evsignal, &sa, old_handler);
+```
+
+同时，`evsig_init_()` 会创建内部 socketpair/pipe：
+
+```text
+base->sig.ev_signal_pair[0] 读端
+base->sig.ev_signal_pair[1] 写端
+```
+
+并给读端注册一个内部事件：
+
+```c
+event_assign(&base->sig.ev_signal, base, base->sig.ev_signal_pair[0],
+    EV_READ | EV_PERSIST, evsig_cb, base);
+```
+
+### 10.3 evsig_handler 为什么只写一个字节？
+
+真正被系统 signal 调用的是 `evsig_handler()`。
+
+它核心只做：
+
+```c
+msg = sig;
+write(evsig_base_fd, &msg, 1);
+```
+
+`evsig_base_fd` 是 `ev_signal_pair[1]`，也就是写端。
+
+这样设计的原因是：Unix signal handler 运行在异步上下文里，不能安全地做复杂
+操作，例如 malloc、加锁、调用用户 callback、操作复杂数据结构等。Libevent 只
+在 handler 中写一个字节，用最小动作唤醒事件循环。
+
+### 10.4 evsig_cb 如何激活用户 signal callback？
+
+写端写入一个字节后，`ev_signal_pair[0]` 读端变为可读。因为它已经作为普通
+`EV_READ | EV_PERSIST` event 注册到 `event_base`，事件循环会调用：
+
+```c
+evsig_cb(fd, EV_READ, base);
+```
+
+`evsig_cb()` 会读出所有 signal 字节：
+
+```c
+n = read(fd, signals, sizeof(signals));
+```
+
+然后统计每个 signal 出现次数：
+
+```c
+ncaught[sig]++;
+```
+
+最后对每个收到的 signal 调：
+
+```c
+evmap_signal_active_(base, signum, ncalls);
+```
+
+`evmap_signal_active_()` 会找到该 signal 对应的所有 event，并激活它们：
+
+```c
+event_active_nolock_(ev, EV_SIGNAL, ncalls);
+```
+
+active event 最终在 `event_process_active()` 中执行。signal event 会走：
+
+```c
+event_signal_closure(base, ev);
+```
+
+它根据 `ncalls` 循环调用用户 callback：
+
+```c
+(*ev->ev_callback)(ev->ev_fd, ev->ev_res, ev->ev_arg);
+```
+
+所以 `hello-world.c` 里的 `signal_cb()` 是在正常 event loop 上下文中执行，
+不是在原始 Unix signal handler 中执行。
+
+以 `SIGINT` 为例，完整链路是：
+
+```text
+evsignal_new(base, SIGINT, signal_cb, base)
+-> event_new(..., EV_SIGNAL | EV_PERSIST, ...)
+-> event_add()
+-> evmap_signal_add_(base, SIGINT, event)
+-> evsig_add()
+-> sigaction(SIGINT, evsig_handler)
+-> event_add(base->sig.ev_signal)
+
+用户按 Ctrl-C
+-> OS delivers SIGINT
+-> evsig_handler(SIGINT)
+-> write(SIGINT byte) to ev_signal_pair[1]
+-> ev_signal_pair[0] readable
+-> event loop calls evsig_cb
+-> evsig_cb reads signal bytes
+-> evmap_signal_active_(base, SIGINT, ncalls)
+-> event_active_nolock_(signal_event, EV_SIGNAL, ncalls)
+-> event_process_active()
+-> event_signal_closure()
+-> user signal_cb()
+```
+
+`hello-world.c` 的 `signal_cb()` 中调用：
+
+```c
+event_base_loopexit(base, &delay);
+```
+
+表示 2 秒后退出事件循环。
+
+### 10.5 signal 机制的限制是什么？
+
+默认 `signal.c` 后端使用全局状态：
+
+```text
+evsig_base
+evsig_base_fd
+evsig_base_n_signals_added
+```
+
+因此默认 signal 后端同一时刻通常只有一个 `event_base` 能可靠接收 signal。
+源码中也有对应 warning：
+
+```text
+Only one can have signals at a time with this backend.
+```
+
+实践中建议：signal 统一放在主 `event_base` 里处理，不要让多个 worker
+`event_base` 同时抢同一个 signal。
+
+## 11. bufferevent：如何封装单条 stream 连接的异步读写？
 
 `bufferevent` 是面向 stream socket 的高级封装。
 
@@ -707,7 +931,7 @@ be_ops
     bufferevent 类型操作表。socket/filter/pair/ssl 等类型各有实现。
 ```
 
-### 10.1 bufferevent_socket_new()
+### 11.1 bufferevent_socket_new()
 
 socket bufferevent 实现在 `bufferevent_sock.c`。
 
@@ -735,7 +959,7 @@ event_assign(&bufev->ev_write, bufev->ev_base, fd,
 这里的 `bufferevent_readcb` / `bufferevent_writecb` 是 Libevent 内部回调，
 不是用户回调。它们负责真正 read/write socket，然后再触发用户 callback。
 
-### 10.2 bufferevent_setcb()
+### 11.2 bufferevent_setcb()
 
 保存用户回调：
 
@@ -754,7 +978,7 @@ bufferevent_setcb(bev, NULL, conn_writecb, conn_eventcb, NULL);
 
 表示不关心读，只关心写完和连接事件。
 
-### 10.3 bufferevent_enable()
+### 11.3 bufferevent_enable()
 
 `bufferevent_enable(bev, EV_READ | EV_WRITE)` 会记录 enabled 状态，并调用
 对应类型的 `be_ops->enable()`。
@@ -771,7 +995,7 @@ if (event & EV_WRITE)
 
 本质还是把内部 `struct event` 加入 `event_base`。
 
-### 10.4 bufferevent_write()
+### 11.4 bufferevent_write()
 
 `bufferevent_write()` 不直接调用 `write(fd, ...)`。
 
@@ -792,7 +1016,7 @@ evbuffer_write_atmost(bufev->output, fd, atmost);
 
 写完后，如果 output 为空，会删除写事件并触发用户 write callback。
 
-## 11. evbuffer：bufferevent 的输入/输出缓冲区如何设计？
+## 12. evbuffer：bufferevent 的输入/输出缓冲区如何设计？
 
 `evbuffer` 是链式字节缓冲区。
 
@@ -849,7 +1073,7 @@ struct evbuffer {
 };
 ```
 
-## 12. evbuffer_chain：为什么 evbuffer 使用链表结构？
+## 13. evbuffer_chain：为什么 evbuffer 使用链表结构？
 
 `evbuffer_chain` 是 evbuffer 链表中的一个节点：
 
@@ -876,7 +1100,7 @@ struct evbuffer_chain {
 
 也就是 chain 头和数据区一次性分配。
 
-### 12.1 misalign 和 off
+### 13.1 misalign 和 off
 
 `off` 表示当前 chain 里有效数据长度。
 
@@ -901,7 +1125,7 @@ off:      4
 
 这样可以避免每次从头部 drain 都做 `memmove()`。
 
-### 12.2 为什么 evbuffer_chain 要组织成链表？
+### 13.2 为什么 evbuffer_chain 要组织成链表？
 
 对于 `hello-world.c`，单个可扩容 buffer 就够了。但 Libevent 是通用网络库，
 evbuffer 需要支持复杂场景。
@@ -956,7 +1180,7 @@ EVBUFFER_MULTICAST
 
 所以 `evbuffer` 不是简单字符串 buffer，而是通用流式 IO buffer。
 
-## 13. hello-world.c 的组件关系：所有组件如何串起来？
+## 14. hello-world.c 的组件关系：所有组件如何串起来？
 
 最终把这些组件串起来：
 
